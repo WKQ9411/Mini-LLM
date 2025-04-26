@@ -1,0 +1,10 @@
+matplotlib
+numpy
+PyYAML
+tokenizers
+torch>=2.4.0
+tqdm
+transformers
+wcwidth
+tensorboard
+modelscope
