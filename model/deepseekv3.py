@@ -9,14 +9,6 @@ import torch.distributed as dist
 
 from .basemodel import BaseModelArgs, BaseModel
 
-# 【说明】
-# 1. 主要从MLA、DeepSeekMoE、MTP来实现一个mini-deepseek-v3架构模型
-# 2. 由于模型较小，不考虑通过YaRN来扩展上下文长度，使用原始RoPE
-# 3. 不考虑原文中负载均衡策略、FP8混合精度训练、DualPipe等工程优化
-# 4. 由于模型参数量较少，采用单卡或ddp的方式训练
-# 5. 根据以上几点对源代码进行一定修改与简化，无需修改的地方尽量与源码保持一致
-# 6. 本项目修改自DeepSeek-V3源码：https://github.com/deepseek-ai/DeepSeek-V3 ，而非HuggingFace版本的代码
-
 
 # ----------------------------------------------【参数配置】---------------------------------------------- #
 @dataclass
@@ -360,7 +352,8 @@ class Gate(nn.Module):
         self.route_scale = args.route_scale
         self.n_routed_experts = args.n_routed_experts
         self.weight = nn.Parameter(torch.empty(args.n_routed_experts, args.dim))  # torch.empty 用于创建未初始化的张量，需要手动初始化
-        self.bias = nn.Parameter(torch.empty(args.n_routed_experts), requires_grad=False) if args.use_noaux_tc else None  # 用于无辅助损失负载均衡策略的 bias，不参与梯度计算，基于策略来更新bias，可以理解为通过策略干预而不是 loss 来进行更新的模型参数
+        self.bias = nn.Parameter(torch.empty(args.n_routed_experts), requires_grad=False)  # 用于无辅助损失负载均衡策略的 bias，不参与梯度计算，基于策略来更新bias，可以理解为通过策略干预而不是 loss 来进行更新的模型参数
+        self.use_noaux_tc = args.use_noaux_tc
         self.original_scores = None  # 用于存储原始的亲和度得分, 形状为 (batch_size * seq_len, n_routed_experts)
         self.reset_parameters()
 
@@ -369,7 +362,7 @@ class Gate(nn.Module):
         初始化参数
         """
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
+        if self.use_noaux_tc:
             nn.init.zeros_(self.bias)  # 这里将 bias 初始化为 0
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -387,13 +380,13 @@ class Gate(nn.Module):
         self.original_scores = scores  # 保留原始得分，用于后续根据原始得分抽取 topk 个专家 (batch_size * seq_len, n_routed_experts)
         scores_for_topk = scores # 创建一个新变量，避免原地操作
         
-        if self.bias is not None:
+        if self.use_noaux_tc:
             scores_for_topk = scores_for_topk + self.bias
         
         # 为专家分组
         if self.n_groups > 1:
             scores_view = scores_for_topk.view(x.size(0), self.n_groups, -1)  # (batch_size * seq_len, n_groups, n_routed_experts_per_group)
-            if self.bias is None:
+            if not self.use_noaux_tc:
                 group_scores = scores_view.amax(dim=-1)  # 取每个组的得分最大值，形状变为 (batch_size * seq_len, n_groups)
             else:
                 group_scores = scores_view.topk(2, dim=-1)[0].sum(dim=-1)  # 取每个组最大两个得分的和，形状变为 (batch_size * seq_len, n_groups)
@@ -502,7 +495,7 @@ class MoE(nn.Module):
         # -------------------- 无辅助损失负载均衡策略 --------------------
         # 这里我们计算出了一个 batch 中所有专家的激活情况，故顺便在此应用无辅助损失的负载均衡策略来更新 gate 中的 bias
         # 每一个 MoE 层更新自己的 Gate 的 bias，下一个 batch 的数据将使用更新的 bias，训练的最后一组数据更新完 bias 后，将作为模型参数保存下来
-        if self.gate.bias is not None and self.training:
+        if self.gate.use_noaux_tc and self.training:
             global_counts = counts.clone()
             
             # 同步所有 GPU 的 counts
@@ -784,7 +777,7 @@ if __name__ == "__main__":
     # 反向传播
     loss.backward()
     # 检查 bias 的梯度
-    if gate.bias is not None:
+    if gate.use_noaux_tc:
         print('grad of bias: \n', gate.bias.grad)
     print('bias: \n', gate.bias)
     print('grad of weight: \n', gate.weight.grad)

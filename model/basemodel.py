@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass
 import inspect
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 import torch.nn.functional as F
+from collections import Counter
 
 
 # ---------------- 基础模型和配置 ----------------
@@ -96,6 +97,69 @@ class BaseModel(nn.Module):
 
         return filtered_logits
 
+    def _apply_repetition_penalty(self, logits: torch.Tensor, generated_token_ids: List[int], penalty: float):
+        """
+        应用存在惩罚, 只要是已生成过的 token, 就无差别应用惩罚
+
+        Args:
+            logits (torch.Tensor): 当前步的 logits (batch_size, vocab_size), 这里 batch_size=1
+            generated_token_ids (List[int]): 到目前为止已生成的 token ID 列表
+            penalty (float): 重复惩罚因子 (>= 1.0)
+
+        Returns:
+            torch.Tensor: 应用惩罚后的 logits
+        """
+        if not generated_token_ids or penalty == 1.0:
+            return logits
+
+        # 计算 logits 张量中所有对应于已经生成的 token 的原始分数
+        score = torch.gather(logits, 1, torch.tensor([generated_token_ids], device=logits.device)) # (1, num_generated)
+
+        # 原始 logits 可正可负，如果是正，就减小，如果是负，就更负
+        # 如果 score < 0, 则 score = score * penalty
+        # 如果 score > 0, 则 score = score / penalty
+        score = torch.where(score < 0, score * penalty, score / penalty)
+
+        logits.scatter_(1, torch.tensor([generated_token_ids], device=logits.device), score)
+        return logits
+    
+    def _apply_frequency_penalty(self, logits: torch.Tensor, generated_token_ids: List[int], penalty: float):
+        """
+        应用频率惩罚 (Frequency Penalty), 惩罚力度与 token 在已生成序列中的出现次数成正比
+
+        Args:
+            logits (torch.Tensor): 当前步的 logits (batch_size, vocab_size), 这里 batch_size=1
+            generated_token_ids (List[int]): 到目前为止已生成的 token ID 列表
+            penalty (float): 频率惩罚因子 (通常 >= 0.0) 0.0 表示无惩罚, 正值会降低重复 token 的 logit。
+
+        Returns:
+            torch.Tensor: 应用惩罚后的 logits
+        """
+        if not generated_token_ids or penalty == 0.0:
+            return logits
+
+        # 1. 计算已生成 token 的频率
+        token_counts = Counter(generated_token_ids)  # {token_id: count, ...}
+        # 提取出现过的 unique token IDs 和它们的频率
+        unique_ids = list(token_counts.keys())
+        frequencies = [token_counts[token_id] for token_id in unique_ids]
+
+        # 转换为 tensor
+        unique_ids_tensor = torch.tensor([unique_ids], device=logits.device) # Shape: (1, num_unique_ids)
+        # 确保 frequencies tensor 类型与 logits 一致，以便进行数学运算
+        frequencies_tensor = torch.tensor([frequencies], dtype=logits.dtype, device=logits.device) # Shape: (1, num_unique_ids)
+
+        # 2. 计算要从 logit 中减去的惩罚量
+        # 惩罚量 = 频率 * 惩罚因子
+        penalty_amounts = frequencies_tensor * penalty
+
+        # 3. 从对应的 logit 中减去惩罚量
+        # 使用 scatter_add_ 并传入负的惩罚量来实现减法
+        # 注意：这里直接修改 logits tensor (in-place)
+        logits.scatter_add_(1, unique_ids_tensor, -penalty_amounts)
+
+        return logits
+
     @torch.inference_mode()
     def generate(
         self,
@@ -107,6 +171,8 @@ class BaseModel(nn.Module):
         temperature: float = 0.8,
         top_k: int = 50,
         top_p: float = 0.9,
+        repetition_penalty: float = 1.0,
+        frequency_penalty: float = 0.0,
         task: str = "chat",
         ):
         """
@@ -121,6 +187,8 @@ class BaseModel(nn.Module):
             temperature (float, optional): 控制采样随机性的温度值 ( > 0), 值越小越确定，值越大越随机, 默认为 0.8
             top_k (int, optional): Top-K 采样, 仅考虑概率最高的 K 个 token, 0 表示禁用, 默认为 50
             top_p (float, optional): Top-P 采样, 仅考虑累积概率超过 P 的最小 token 集, 0 或 1.0 表示禁用。 Defaults to 0.9
+            repetition_penalty (float, optional): 重复惩罚因子 (>= 1.0), 默认为 1.0, 表示无惩罚, 推荐 1.0-1.5
+            frequency_penalty (float, optional): 频率惩罚因子 (>= 0.0), 默认为 0.0, 表示无惩罚, 推荐 0.0-0.5
             task (str, optional): 任务类型, 若为 chat, 则应用聊天模板, 若为 generate, 则进行补全, 默认为 chat (generate 模式主要用于观察预训练模型的效果)
             
         Yields:
@@ -135,14 +203,19 @@ class BaseModel(nn.Module):
             raise ValueError("top_p 必须在 [0.0, 1.0] 范围内")
         if max_new_tokens is not None and max_new_tokens <= 0:
             raise ValueError("max_new_tokens 必须大于 0")
+        if repetition_penalty < 1.0:
+            raise ValueError("repetition_penalty (存在惩罚因子)必须大于等于 1.0")
+        if frequency_penalty < 0.0:
+            raise ValueError("frequency_penalty (频率惩罚因子) 必须大于等于 0.0")
+        if repetition_penalty != 1.0 and frequency_penalty != 0.0:
+            raise ValueError("不建议同时使用 repetition_penalty (存在惩罚因子) 和 frequency_penalty (频率惩罚因子)")
         
         # --- Tokenize 输入 ---
         if task == "chat":  # 聊天任务，应用聊天模板
             messages = [
-                {"role": "system", "content": "你是由 WKQ 训练的聊天机器人，名为 Mini LLM。"},
                 {"role": "user", "content": f'{prompt}'}
             ]
-            input_ids = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="pt").to(next(self.parameters()).device)
+            input_ids = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="pt", add_generation_prompt=True).to(next(self.parameters()).device)
         elif task == "generate":  # 生成任务，直接使用输入预测下一个 token
             input_ids = tokenizer.encode(prompt, return_tensors="pt").to(next(self.parameters()).device)  # (1, prompt_len)
         else:
@@ -167,9 +240,30 @@ class BaseModel(nn.Module):
         generated_tokens = [] # 用于非流式输出时收集
         prompt_last_pos = prompt_len - 1
         prev_id = input_ids[:, [-1]]  # (1, 1)
+
+        # --- 流式输出相关变量 ---
+        # 对于多字节编码（如 UTF-8 中的中文、emoji 等），单个 token ID 可能只代表字符的一部分。
+        # 直接解码单个 token ID 可能会产生无效字符或 Unicode 替换字符（例如 �），直到组成完整字符的所有 token 都被解码。
+        yielded_text = ""  # 记录已经 yield 出去的文本
+        token_buffer = []  # 临时存储 token ID 用于解码
+
         for start_pos in range(prompt_last_pos, prompt_last_pos + max_tokens_to_generate):  # start_pos 从 prompt_last_pos 开始
             logits, _, _ = self(input_ids=prev_id, start_pos=start_pos)  # (1, 1, vocab_size)
             next_token_logits = logits[:, -1, :]  # (1, vocab_size)
+
+            # 在 temperature 和 top-k/p 之前应用惩罚是常见做法
+            if repetition_penalty > 1.0:
+                next_token_logits = self._apply_repetition_penalty(
+                    next_token_logits,
+                    generated_tokens, # 只惩罚已生成的 token
+                    repetition_penalty
+                 )
+            if frequency_penalty > 0.0:
+                next_token_logits = self._apply_frequency_penalty(
+                    next_token_logits,
+                    generated_tokens, # 只惩罚已生成的 token
+                    frequency_penalty
+                 )
 
             # 应用采样策略
             next_token_logits = self._apply_temperature(next_token_logits, temperature)
@@ -178,14 +272,22 @@ class BaseModel(nn.Module):
             probs = F.softmax(next_token_logits, dim=-1)  # (1, vocab_size)
             next_token_id = torch.multinomial(probs, num_samples=1)  # (1, 1)
 
-            generated_tokens.append(next_token_id.item())
-
             if next_token_id.item() == tokenizer.eos_token_id:
                 break
 
-            decoded_chunk = tokenizer.decode([next_token_id.item()], skip_special_tokens=True)
+            generated_tokens.append(next_token_id.item())
+
             if stream:
-                yield decoded_chunk
+                token_buffer.append(next_token_id.item()) # 加入 buffer
+                # 尝试解码当前 buffer
+                current_decoded_text = tokenizer.decode(token_buffer, skip_special_tokens=True)
+
+                # 检查是否有新的、完整的文本可以 yield
+                # 判断解码出的文本末尾是否是因字符不完整而产生的替换符，如果不完整，解码的将是�，此时不 yield
+                if len(current_decoded_text) > len(yielded_text) and not current_decoded_text.endswith('\uFFFD'):
+                    new_text_chunk = current_decoded_text[len(yielded_text):]
+                    yield new_text_chunk
+                    yielded_text = current_decoded_text # 更新已 yield 文本
 
             prev_id = next_token_id
         
