@@ -8,3 +8,4 @@ transformers
 wcwidth
 tensorboard
 modelscope
+pandas

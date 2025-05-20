@@ -16,7 +16,6 @@ from dataclasses import asdict
 from torch.utils.tensorboard import SummaryWriter
 from torch.amp import GradScaler, autocast
 from transformers import AutoTokenizer
-import numpy as np
 
 
 tokenizer = AutoTokenizer.from_pretrained("./mini_tokenizer")
