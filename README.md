@@ -75,13 +75,15 @@ cd ./preprocess_data
 python preprocess_data.py
 ```
 
-用于将原始文件分词并转换为`token id`，以`.bin`的格式保存。序列猴子数据集大致需要3个小时，如果不想等待，也可下载我在modelscope上传到处理好的`.bin`文件(地址：https://www.modelscope.cn/datasets/wangkunqing/mini_llm_pretrain_data)。同样在`preprocess_data`目录下，可直接执行以下相应命令即可：
+用于将原始文件分词并转换为`token id`，以`.bin`的格式保存。序列猴子数据集大致需要3个小时，如果不想等待，也可下载我在modelscope上传到处理好的`.bin`文件。同样在`preprocess_data`目录下，可直接执行以下相应命令即可：
 
 ```bash
 bash ./download_pretrain_data.sh
 bash ./download_sft_data.sh
 bash ./download_tokenizer_data.sh
 ```
+
+（modelscope数据集地址为：https://www.modelscope.cn/datasets/wangkunqing/mini_llm_pretrain_data）
 
 ### 3. 训练
 
