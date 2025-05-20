@@ -170,4 +170,4 @@ MODEL_CONFIG_DEFINITIONS = {
 
 ## （四）演示
 
-<video src="./utils/example.mp4" controls width="640" height="360"></video>
+https://github.com/user-attachments/assets/af546e22-5c8a-4524-9bad-746909ed49d5
