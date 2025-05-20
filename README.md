@@ -83,7 +83,7 @@ bash ./download_sft_data.sh
 bash ./download_tokenizer_data.sh
 ```
 
-（modelscope数据集地址为：https://www.modelscope.cn/datasets/wangkunqing/mini_llm_pretrain_data）
+（modelscope数据集地址为：https://www.modelscope.cn/datasets/wangkunqing/mini_llm_pretrain_data ）
 
 ### 3. 训练
 
