@@ -18,7 +18,7 @@
     - Pretrain
     - SFT
 
-# 先关链接
+# 相关链接
 - DeepSeek-V3论文解读：https://blog.csdn.net/m0_55846238/article/details/148321958?spm=1011.2415.3001.5331
 - mini_deepseekv3代码解读：https://blog.csdn.net/m0_55846238/article/details/148354198#comments_37350939
 - Llama3论文解读：https://blog.csdn.net/m0_55846238/article/details/145728695?spm=1011.2415.3001.5331
