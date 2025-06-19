@@ -2,7 +2,7 @@
     <img src="./utils/logo_1.png" width="400">
 </p>
 
-## 更新内容
+# 更新内容
 
 - 持续更新中...
 
@@ -18,7 +18,12 @@
     - Pretrain
     - SFT
 
-## 简介
+# 先关链接
+- DeepSeek-V3论文解读：https://blog.csdn.net/m0_55846238/article/details/148321958?spm=1011.2415.3001.5331
+- mini_deepseekv3代码解读：https://blog.csdn.net/m0_55846238/article/details/148354198#comments_37350939
+- Llama3论文解读：https://blog.csdn.net/m0_55846238/article/details/145728695?spm=1011.2415.3001.5331
+
+# 简介
 
 本项旨在基于较小的算力，实现基本的DeepSeek-V3训练和推理Demo，并编写一个**能够复用的Demo框架**。因此，本项目将数据集、训练流程等尽可能固定下来，未来在需要学习新的模型架构时，只需将手撕代码放在model文件夹中即可，从而能够将主要精力聚焦在模型架构的学习上。
 
@@ -41,7 +46,7 @@ class DeepSeekV3Model(BaseModel):
 
 模型参数配置和模型类使用`{ModelName}ModelArgs`和`{ModelName}Model`命名，继承`basemodel.py`中的`BaseModelArgs`和`BaseModel`。模型类需要添加类属性`model_name`，`__init__.py`会自动发现模型并注册到包中。模型类的返回需包括`logits, loss, other_vars`，其中`other_vars`用于自定义需要外部监控的变量，监控时只需稍微修改训练代码，打印输出或写入到`tensorboard`即可，由用户自己定义。
 
-## （一）数据集
+# 一、数据集
 
 tokenizer训练数据集：
 - 经过预处理的中文维基百科数据集 https://hf-mirror.com/datasets/pleisto/wikipedia-cn-20230720-filtered
@@ -52,17 +57,17 @@ tokenizer训练数据集：
 
 SFT数据集：匠数科技大模型sft数据集 https://www.modelscope.cn/datasets/deepctrl/deepctrl-sft-data/files
 
-## （二）使用
+# 二、使用
 
 下载项目后，进入到项目根目录下。
 
-### 1. 安装依赖
+## 1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 预处理数据
+## 2. 预处理数据
 
 预训练时，将预训练数据集放于`./preprocess_data/data/pretrain_data/`下。
 
@@ -85,9 +90,9 @@ bash ./download_tokenizer_data.sh
 
 （modelscope数据集地址为：https://www.modelscope.cn/datasets/wangkunqing/mini_llm_pretrain_data ）
 
-### 3. 训练
+## 3. 训练
 
-#### （1）训练tokenizer
+### （1）训练tokenizer
 
 tokenizer采用字节级BPE，使用wikipedia进行训练，词表大小设置为32k，执行如下代码：
 
@@ -97,7 +102,7 @@ python train_tokenizer.py
 
 也可以使用其他数据集来训练，只需修改代码中的数据集路径，并修改读取数据相关的代码即可。也可以直接使用本项目训练好的mini_tokenizer。
 
-#### （2）预训练
+### （2）预训练
 
 使用单卡进行训练：
 
@@ -125,7 +130,7 @@ tensorboard --logdir=output/
 tensorboard --logdir=output/ --port=8080 --bind_all
 ```
 
-#### （3）SFT
+### （3）SFT
 
 由于模型参数量基本在100-200M，SFT训练数据又相对较少，仅使用单卡训练即可：
 
@@ -133,7 +138,7 @@ tensorboard --logdir=output/ --port=8080 --bind_all
 python sft.py --model_name=mini_deepseekv3 --max_batch_size=18
 ```
 
-### 4. 推理
+## 4. 推理
 
 可使用`test.py`在终端中进行简单测试，注意修改其中的模型权重和配置文件路径：
 
@@ -166,10 +171,10 @@ MODEL_CONFIG_DEFINITIONS = {
 }
 ```
 
-## （三）结果
+# 三、结果
 
 最后需说明的是，100-200M的模型容量较小，虽然可能一定程度上较好的预测下一个词，但是并不等同于它具备了良好的泛化能力、知识储备或推理能力。小模型更容易“记住”训练数据中的表面模式（比如特定短语、句子结构、格式），而不是真正“理解”其含义。这导致它们在面对需要知识、推理或稍微偏离训练模式的prompt时，容易产生幻觉和不连贯的输出。
 
-## （四）演示
+# 四、演示
 
 https://github.com/user-attachments/assets/af546e22-5c8a-4524-9bad-746909ed49d5
