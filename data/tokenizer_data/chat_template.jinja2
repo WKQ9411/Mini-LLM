@@ -1,0 +1,34 @@
+{%- if messages[0].role == 'system' %}
+    {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
+{%- endif %}
+{%- for message in messages %}
+    {%- if message.content is string %}
+        {%- set content = message.content %}
+    {%- else %}
+        {%- set content = '' %}
+    {%- endif %}
+    {%- if message.role == "user" %}
+        {{- '<|im_start|>user\n' + content + '<|im_end|>\n' }}
+    {%- elif message.role == "assistant" %}
+        {%- set has_think = false %}
+        {%- set think_content = '' %}
+        {%- set main_content = content %}
+        
+        {%- if '</think>' in content %}
+            {%- set think_content = content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
+            {%- set main_content = content.split('</think>')[-1].lstrip('\n') %}
+            {%- set has_think = true %}
+        {%- endif %}
+        
+        {{- '<|im_start|>assistant\n' }}
+        {%- if has_think %}
+            {{- '<think>\n' + think_content + '\n</think>\n\n' + main_content }}
+        {%- else %}
+            {{- content }}
+        {%- endif %}
+        {{- '<|im_end|>\n' }}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif %}

@@ -1,0 +1,35 @@
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.env
+mini_tokenizer_old/
+
+# Virtual environments
+.venv
+
+# VsCode settings
+.vscode/
+
+# Pretrain data
+data/pretrain_data/*
+!data/pretrain_data/put_pretrain_data_here
+
+# Tokenizer data
+data/tokenizer_data/*
+!data/tokenizer_data/put_tokenizer_data_here
+!data/tokenizer_data/chat_template.jinja2
+
+# SFT data
+data/sft_data/*
+!data/sft_data/put_sft_data_here
+!data/sft_data/jsonl/self_cognition.jsonl
+!data/sft_data/sft_length_distribution.png
+
+# output
+output/*
+
+# api
+.api_keys/

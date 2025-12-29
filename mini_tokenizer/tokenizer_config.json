@@ -1,0 +1,60 @@
+{
+    "add_prefix_space": false,
+    "added_tokens_decoder": {
+        "0": {
+            "content": "<|endoftext|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": true
+        },
+        "32000": {
+            "content": "<|im_start|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": true
+        },
+        "32001": {
+            "content": "<|im_end|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": true
+        },
+        "32002": {
+            "content": "<think>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": false
+        },
+        "32003": {
+            "content": "</think>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": false
+        }
+    },
+    "additional_special_tokens": [
+        "<|im_start|>",
+        "<|im_end|>"
+    ],
+    "bos_token": null,
+    "eos_token": "<|im_end|>",
+    "pad_token": "<|endoftext|>",
+    "unk_token": null,
+    "chat_template": "{%- if messages[0].role == 'system' %}\n    {{- '<|im_start|>system\\n' + messages[0].content + '<|im_end|>\\n' }}\n{%- endif %}\n{%- for message in messages %}\n    {%- if message.content is string %}\n        {%- set content = message.content %}\n    {%- else %}\n        {%- set content = '' %}\n    {%- endif %}\n    {%- if message.role == \"user\" %}\n        {{- '<|im_start|>user\\n' + content + '<|im_end|>\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set has_think = false %}\n        {%- set think_content = '' %}\n        {%- set main_content = content %}\n        \n        {%- if '</think>' in content %}\n            {%- set think_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n            {%- set main_content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- set has_think = true %}\n        {%- endif %}\n        \n        {{- '<|im_start|>assistant\\n' }}\n        {%- if has_think %}\n            {{- '<think>\\n' + think_content + '\\n</think>\\n\\n' + main_content }}\n        {%- else %}\n            {{- content }}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}",
+    "clean_up_tokenization_spaces": false,
+    "errors": "replace",
+    "model_max_length": 10000000,
+    "split_special_tokens": false,
+    "tokenizer_class": "PreTrainedTokenizerFast",
+    "add_bos_token": false
+}
