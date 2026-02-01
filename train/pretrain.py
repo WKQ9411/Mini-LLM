@@ -364,12 +364,15 @@ def train_process(local_rank, rank, world_size, args):
                     writer.add_scalar("Training Loss/Global Loss", global_loss, it)
                     writer.add_scalar("Learning Rate", lr, it)
                     writer.add_scalar("Perplexity", ppl, it)
-                    if args.model_name == 'mini_deepseekv3':  # 对 mini_deepseekv3 模型额外记录序列级辅助损失、mtp 损失和负载情况
-                        if outputs.total_seq_aux_loss:
+                    # 对特定模型额外记录序列级辅助损失、mtp 损失和负载情况等
+                    if args.model_name == 'mini_deepseekv3' or args.model_name == 'mini_qwen3_next':
+                        if hasattr(outputs, 'total_seq_aux_loss') and outputs.total_seq_aux_loss:
                             writer.add_scalar('Training Loss/Seq Aux Loss', outputs.total_seq_aux_loss, it)
-                        if outputs.total_mtp_loss:
+                        if hasattr(outputs, 'total_mtp_loss') and outputs.total_mtp_loss:
                             writer.add_scalar('Training Loss/MTP Loss', outputs.total_mtp_loss, it)
-                        if outputs.all_global_counts:
+                        if hasattr(outputs, 'aux_loss') and outputs.aux_loss:
+                            writer.add_scalar('Training Loss/Aux Loss', outputs.aux_loss, it)
+                        if hasattr(outputs, 'all_global_counts') and outputs.all_global_counts:
                             for layer_info in outputs.all_global_counts:
                                 layer_idx = layer_info['layer_idx']
                                 counts = torch.tensor(layer_info['global_counts'], dtype=torch.float32)

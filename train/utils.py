@@ -79,8 +79,17 @@ def configure_optimizer(
     decay_params = []
     no_decay_params = []
 
+    # 对 ZeroCenteredRMSNorm 应用权重衰减
+    zero_centered_norm_params = set()
+    for _, m in model.named_modules():
+        if m.__class__.__name__ == "ZeroCenteredRMSNorm":
+            for p in m.parameters():
+                zero_centered_norm_params.add(p)
+
     for name, param in param_dict.items():
-        if param.dim() < 2 or "bias" in name:
+        if param in zero_centered_norm_params:
+            decay_params.append(param)
+        elif param.dim() < 2 or "bias" in name:
             no_decay_params.append(param)
         else:
             decay_params.append(param)

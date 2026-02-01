@@ -2,27 +2,37 @@ from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 from transformers import PreTrainedModel
 from typing import Tuple
 from .generator import Generator
+
 from .mini_llama3.modeling_mini_llama3 import MiniLlama3ForCausalLM, MiniLlama3Model
 from .mini_llama3.configuration_mini_llama3 import MiniLlama3Config
 from .mini_deepseekv3.modeling_mini_deepseekv3 import MiniDeepSeekV3ForCausalLM, MiniDeepSeekV3Model
 from .mini_deepseekv3.configuration_mini_deepseekv3 import MiniDeepSeekV3Config
+from .mini_qwen3_next.modeling_mini_qwen3_next import MiniQwen3NextForCausalLM, MiniQwen3NextModel
+from .mini_qwen3_next.configuration_mini_qwen3_next import MiniQwen3NextConfig
 
 
 # 注册 AutoConfig
 AutoConfig.register("mini_llama3", MiniLlama3Config)
 AutoConfig.register("mini_deepseekv3", MiniDeepSeekV3Config)
+AutoConfig.register("mini_qwen3_next", MiniQwen3NextConfig)
 
 # 注册 AutoModel
 AutoModel.register(MiniLlama3Config, MiniLlama3Model)
 AutoModel.register(MiniDeepSeekV3Config, MiniDeepSeekV3Model)
+AutoModel.register(MiniQwen3NextConfig, MiniQwen3NextModel)
 
 # 注册 AutoModelForCausalLM
 AutoModelForCausalLM.register(MiniLlama3Config, MiniLlama3ForCausalLM)
 AutoModelForCausalLM.register(MiniDeepSeekV3Config, MiniDeepSeekV3ForCausalLM)
+AutoModelForCausalLM.register(MiniQwen3NextConfig, MiniQwen3NextForCausalLM)
 
 
 def list_models():
-    return ["mini_llama3", "mini_deepseekv3"]
+    return [
+        "mini_llama3", 
+        "mini_deepseekv3",
+        "mini_qwen3_next",
+    ]
 
 
 def get_model_and_config(model_name: str, **kwargs):
@@ -41,6 +51,9 @@ def get_model_and_config(model_name: str, **kwargs):
     elif model_name == "mini_deepseekv3":
         model = MiniDeepSeekV3ForCausalLM
         config = MiniDeepSeekV3Config
+    elif model_name == "mini_qwen3_next":
+        model = MiniQwen3NextForCausalLM
+        config = MiniQwen3NextConfig
     else:
         raise ValueError(f"Unsupported model: {model_name}. Available models: {list_models()}")
     return model, config
@@ -113,6 +126,29 @@ def get_model_info(model: PreTrainedModel) -> Tuple[int, dict]:
                 "architecture": architecture_type,
                 "trainable_params": approx_trainable_params + f" (including MTP: {approx_mtp_params})",
                 "total_params": approx_actual_params + f" (activated: {approx_activated_params})",
+            }
+        elif config.model_type == "mini_qwen3_next":
+            # 计算 MoE 层的数量和激活比例
+            activation_ratio = config.num_experts_per_tok / config.num_experts
+            
+            # 计算所有路由专家的参数
+            routed_experts_total_params = 0
+            for i in range(config.num_hidden_layers):
+                layer = model.model.layers[i]
+                if hasattr(layer, 'mlp'):
+                    from .mini_qwen3_next.modeling_mini_qwen3_next import MiniQwen3NextSparseMoeBlock
+                    if isinstance(layer.mlp, MiniQwen3NextSparseMoeBlock):
+                        # 计算所有路由专家的参数
+                        routed_experts_total_params += sum(p.numel() for p in layer.mlp.experts.parameters() if p.requires_grad)
+
+            # 激活参数量 = 总参数 - 总路由专家参数 + 激活的路由专家参数
+            activated_params = trainable_params - routed_experts_total_params + routed_experts_total_params * activation_ratio
+            approx_trainable_params = get_approximate_params(trainable_params)
+            approx_activated_params = get_approximate_params(activated_params)
+            approx_params_info = {
+                "architecture": architecture_type,
+                "trainable_params": approx_trainable_params,
+                "total_params": approx_trainable_params + f" (activated: {approx_activated_params})",
             }
         else:
             # Dense 架构模型默认 info

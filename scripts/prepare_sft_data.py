@@ -467,34 +467,51 @@ def merge_and_convert_to_parquet(
         else:
             # 对于其他文件，根据 message 内字典数量判断
             message_count = len(messages)
+            # 确保 message 数量为偶数，且 user/assistant 交替出现
+            if message_count % 2 != 0:
+                continue
+            # 检查是否严格交替为 user、assistant
+            valid_roles = True
+            for idx, msg in enumerate(messages):
+                expected_role = "user" if idx % 2 == 0 else "assistant"
+                if msg.get("role") != expected_role:
+                    valid_roles = False
+                    break
+            if not valid_roles:
+                continue
             if message_count == 2:
                 data_type = 'single_turn'
             elif message_count > 2:
                 data_type = 'multi_turn'
             else:
-                # 如果 message 数量小于 2，默认为 single_turn
-                data_type = 'single_turn'
+                continue
         
-        # 1. 完整对话 token
+        # 完整对话 token_id
         full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
         full_ids = tokenizer(full_text, add_special_tokens=False)["input_ids"]
         
-        # 2. 计算 prompt 部分的长度进行 mask
-        prompt_messages = messages[:-1]
-        prompt_text = tokenizer.apply_chat_template(prompt_messages, tokenize=False, add_generation_prompt=True)
-        prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
-        prompt_len = len(prompt_ids)
-        
-        # 3. 构建 labels, prompt 部分设为 ignore_index
-        labels = [ignore_index] * prompt_len + full_ids[prompt_len:]
+        # 1. 两两 message 为一对，对所有 assistant 的回复构造有效 label
+        labels = []
+        for turn in range(0, len(messages), 2):
+            user_msg = messages[turn]
+            assistant_msg = messages[turn + 1]
+
+            full_turn_text = tokenizer.apply_chat_template([user_msg, assistant_msg], tokenize=False, add_generation_prompt=False)
+            full_turn_ids = tokenizer(full_turn_text, add_special_tokens=False)["input_ids"]
+
+            prompt_text = tokenizer.apply_chat_template([user_msg], tokenize=False, add_generation_prompt=True)
+            prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
+            prompt_len = len(prompt_ids)
+
+            labels.extend([ignore_index] * prompt_len + full_turn_ids[prompt_len:])
         assert len(full_ids) == len(labels), "full_ids and labels must have the same length"
         
-        # 4. 截断
+        # 2. 截断
         if len(full_ids) > max_seq_len:
             full_ids = full_ids[:max_seq_len]
             labels = labels[:max_seq_len]
         
-        # 5. padding
+        # 3. padding
         seq_len = len(full_ids)
         pad_len = max_seq_len - seq_len
         
@@ -502,10 +519,10 @@ def merge_and_convert_to_parquet(
         token_ids = full_ids + [tokenizer.pad_token_id] * pad_len
         labels = labels + [ignore_index] * pad_len
         
-        # 6. position ids, 简单递增
+        # 4. position ids, 简单递增
         position_ids = list(range(max_seq_len))
         
-        # 7. length， 记录 padding 前的 token id 长度
+        # 5. length， 记录 padding 前的 token id 长度
         length = seq_len
         
         processed_data.append({

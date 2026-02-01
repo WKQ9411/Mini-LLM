@@ -240,7 +240,9 @@ sync_env() {
         print_info "Detected CUDA version: $DETECTED_CUDA (version code: $CUDA_MAJOR)"
         
         # 根据CUDA版本选择兼容的最高版本
-        if [ "$CUDA_MAJOR" -ge "128" ]; then
+        if [ "$CUDA_MAJOR" -ge "130" ]; then
+            EXTRA_TO_INSTALL="cu130"
+        elif [ "$CUDA_MAJOR" -ge "128" ]; then
             EXTRA_TO_INSTALL="cu128"
         elif [ "$CUDA_MAJOR" -ge "126" ]; then
             EXTRA_TO_INSTALL="cu126"

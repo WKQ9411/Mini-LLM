@@ -352,7 +352,9 @@ function Sync-Environment {
         Write-Info "Detected CUDA version: $script:DETECTED_CUDA (version code: $cudaMajor)"
         
         # 根据CUDA版本选择兼容的最高版本
-        if ($cudaMajorInt -ge 128) {
+        if ($cudaMajorInt -ge 130) {
+            $extraToInstall = "cu130"
+        } elseif ($cudaMajorInt -ge 128) {
             $extraToInstall = "cu128"
         } elseif ($cudaMajorInt -ge 126) {
             $extraToInstall = "cu126"

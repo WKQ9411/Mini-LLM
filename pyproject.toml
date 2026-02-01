@@ -37,6 +37,7 @@ cu121 = ["torch"]
 cu124 = ["torch"]
 cu126 = ["torch"]
 cu128 = ["torch"]
+cu130 = ["torch"]
 
 [tool.uv]
 conflicts = [
@@ -47,6 +48,7 @@ conflicts = [
         { extra = "cu124" },
         { extra = "cu126" },
         { extra = "cu128" },
+        { extra = "cu130" },
     ],
 ]
 index-url = "https://mirrors.aliyun.com/pypi/simple/"
@@ -60,6 +62,7 @@ torch = [
     { index = "pytorch-cu124", extra = "cu124" },
     { index = "pytorch-cu126", extra = "cu126" },
     { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu130", extra = "cu130" },
 ]
 
 [[tool.uv.index]]
@@ -90,6 +93,11 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.hatch.build.targets.wheel]

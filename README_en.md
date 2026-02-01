@@ -6,7 +6,14 @@
 
 <p align="center">
         🤗 <a href="https://huggingface.co/WKQ9411">Hugging Face</a>&nbsp&nbsp | &nbsp&nbsp🤖 <a href="https://www.modelscope.cn/datasets/wangkunqing/mini_llm_dataset">ModelScope</a>&nbsp&nbsp
+<br>
+<a href="README.md">Chinese</a>&nbsp&nbsp
 </p>
+
+# Changelog
+
+- [2026-02-01] Implemented `mini_qwen3_next` model; optimized multi-turn conversation data construction; optimized `mini_models` structure.
+- [2025-12-29] Project initialization; implemented `mini_llama3` and `mini_deepseekv3` models; implemented pretrain and sft.
 
 # I. Project Introduction
 
@@ -74,19 +81,27 @@ bash ./scripts/download_data.sh
 
 The interface is shown in the figure below, where you can select the dataset number to download:
 
-![Dataset Download Interface](./assets/download_data_script.png)
+<div align="center">
+<img src="./assets/download_data_script.png" width="90%" alt="download_data">
+</div>
 
 Among them:
 
 - [1] Download a .parquet format data subset sampled at 5% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for training tokenizer (you can also directly use the pre-trained tokenizer, located in the project's `mini_tokenizer` folder)
 - [2] Download **all original** .parquet files with scores 4-5 from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training
 - [3] Download a .parquet format data subset sampled at 20% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training. Sampling is done proportionally by category, maintaining the same distribution as the original dataset:
-![OpenCSG Fineweb-Edu-Chinese-V2.1 Sampled Data Distribution](./assets/sampled_source_distribution.png)
+<div align="center">
+<img src="./assets/sampled_source_distribution.png" width="60%" alt="sampled_source_distribution">
+</div>
+
 - [4] Download a .bin format data subset sampled at 20% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training (processed into token ids by `mini_tokenizer`)
 - [5] Download all .bin format data files from the DeepCtrl large model dataset for pre-training (processed into token ids by `mini_tokenizer`)
 - [6] Download **all original** .jsonl format data files from the DeepCtrl large model dataset for SFT
-- [7] Download processed .parquet format data files from the DeepCtrl large model dataset for SFT (processed into token ids by `mini_tokenizer`, including: a. all eligible SFT data converted to parquet format; b. sampled 50,000 entries and 200 self-awareness entries; c. data after packing b.; it is recommended to use c. for SFT). The length distribution of sampled data is as follows:
-![DeepCtrl Large Model Dataset Sampled Data Length Distribution](./assets/sampled_sft_data_length_distribution.png)
+- [7] Download processed .parquet format data files from the DeepCtrl large model dataset for SFT (processed into token ids by `mini_tokenizer`, including: (a) all eligible SFT data converted to parquet format; (b) sampled 50,000 entries and 200 self-awareness entries; (c) data after packing (b); it is recommended to use (c) for SFT). The length distribution of sampled data is as follows:
+
+<div align="center">
+<img src="./assets/sampled_sft_data_length_distribution.png" width="70%" alt="sampled_sft_data_length_distribution">
+</div>
 
 You can choose to directly download processed data for training (recommended), or download raw data and process it yourself. Data processing code is located at:
 
@@ -114,15 +129,19 @@ If you need to retrain the tokenizer, it is recommended to ensure the CPU has su
 
 Model architecture references papers, official repository source code, transformers implementations, etc. The `hidden_states` shape is unified as: `(B, H, L, D)`, where `B` is batch size, `H` is the number of heads, `L` is sequence length, and `D` is the dimension per head.
 
-Model architecture references my CSDN blog:
+For model architecture, please refer to my [GitHub Blog](https://wkq9411.github.io/):
 
-> The code in the blog is based on the early version of Mini-LLM implementation, which is not completely consistent with the current version, but the core ideas are the same.
+> The code sections for `mini_llama3` and `mini_deepseekv3` in the blog are based on earlier versions of Mini-LLM. While they are not fully consistent with the current version, the core concepts are the same.
 
-1. `mini_deepseekv3`, MoE Model:
-   - [Paper Interpretation](https://blog.csdn.net/m0_55846238/article/details/148321958?spm=1011.2415.3001.5331)
-   - [Code Interpretation](https://blog.csdn.net/m0_55846238/article/details/148354198#comments_37350939)
-2. `mini_llama3`, Dense Model:
-   - [Code Interpretation](https://blog.csdn.net/m0_55846238/article/details/145728695?spm=1011.2415.3001.5331)
+1. `mini_llama3`, Dense Model:
+   - [Code Analysis](https://wkq9411.github.io/2026-01-01/Code-Llama3.html)
+2. `mini_deepseekv3`, MoE Model:
+   - [Paper Analysis](https://wkq9411.github.io/2026-01-01/Paper-DeepSeek-V3.html)
+   - [Code Analysis](https://wkq9411.github.io/2026-01-01/Code-DeepSeek-V3.html)
+3. `mini_qwen3_next`, Linear Model:
+   - [Paper Analysis - Transformers are RNNs](https://wkq9411.github.io/2026-01-18/Paper-Transformers-are-RNNs.html)
+   - [Paper Analysis - Gated Delta Network](https://wkq9411.github.io/2026-01-18/Paper-Gated-Delta-Network.html)
+   - [Paper Analysis - Gated Attention](https://wkq9411.github.io/2026-01-18/Paper-Gated-Attention.html)
 
 ## (V) Pre-training
 
@@ -154,9 +173,13 @@ tensorboard --logdir=output/ --port=8080 --bind_all
 
 Training records common metrics such as `learning_rate`, `loss`, `ppl`, etc. In addition, taking the `mini_deepseekv3` model as an example, it also records additional metrics including **expert load balancing**, **sequence-level auxiliary loss**, **mtp loss**, etc., as shown in the following figures:
 
-![mini_deepseekv3 Pre-training Metrics](./assets/load_balance.png)
+<div align="center">
+<img src="./assets/load_balance.png" width="90%" alt="load_balance">
+</div>
 
-![mini_deepseekv3 Pre-training Expert Load Balancing](./assets/training_progress.png)
+<div align="center">
+<img src="./assets/training_progress.png" width="90%" alt="training_progress">
+</div>
 
 > Among them, the expert load curve records the ratio of maximum/minimum activation counts of all experts in each layer. A value approaching 1 indicates load balancing, and larger values indicate load imbalance.
 
@@ -172,13 +195,20 @@ For more training parameter descriptions, please refer to the `parse_args()` fun
 
 SFT dataset can choose whether to use packing dataset. After enabling packing, computational resources can be effectively utilized, and the actual effective token length of each batch can be as consistent as possible, thereby avoiding gradient dilution issues. After using packing, each batch needs to construct the corresponding `attention_mask`, visualized as follows (packed two entries):
 
-![SFT Dataset Attention Mask Visualization After Packing](./assets/attention_mask_visualization.png)
+<div align="center">
+<img src="./assets/attention_mask_visualization.png" width="60%" alt="attention_mask_visualization">
+</div>
 
 After packing, the SFT curve is relatively smoother.
 - Packing curve:
-![SFT Dataset Training Curve After Packing](./assets/packing_sft.png)
+<div align="center">
+<img src="./assets/packing_sft.png" width="60%" alt="packing_sft">
+</div>
+
 - Unpacked curve:
-![SFT Dataset Training Curve Without Packing](./assets/no_packing_sft.png)
+<div align="center">
+<img src="./assets/no_packing_sft.png" width="60%" alt="no_packing_sft">
+</div>
 
 ## (VII) Inference
 
@@ -200,7 +230,9 @@ python ./example/test_api.py --model_name=mini_deepseekv3
 
 Taking [CherryStudio](https://www.cherry-ai.com/) as an example, after configuring the OpenAI-compatible API, the dialogue effect is as follows:
 
-![CherryStudio Dialogue Effect](./assets/example.gif)
+<div align="center">
+<img src="./assets/example.gif" width="100%" alt="example">
+</div>
 
 In addition, the model parameters of this project have been uploaded to HuggingFace and can be directly downloaded and used. Usage methods can be found in `example/use_example.ipynb`.
 

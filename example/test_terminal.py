@@ -101,6 +101,12 @@ def generate_with_transformers(messages, model, tokenizer, args):
         repetition_penalty=args.repetition_penalty if args.repetition_penalty != 1.0 else None,
         use_cache=True,
     )
+
+    # 如果模型是 mini_qwen3_next，手动初始化 MiniQwen3NextDynamicCache 以避免 transformers 默认初始化 DynamicCache 导致冲突
+    if args.model_name == "mini_qwen3_next":
+        from mini_models.cache import MiniQwen3NextDynamicCache
+        generation_kwargs["past_key_values"] = MiniQwen3NextDynamicCache(model.config)
+    
     # 移除 None 值
     generation_kwargs = {k: v for k, v in generation_kwargs.items() if v is not None}
     

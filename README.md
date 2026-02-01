@@ -10,6 +10,11 @@
 <a href="README_en.md">English</a>&nbsp&nbsp
 </p>
 
+# 更新日志
+
+- [2026-02-01] 实现 `mini_qwen3_next`模型；优化多轮对话数据构造；优化 `mini_models`结构。
+- [2025-12-29] 项目初始化；实现 `mini_llama3`、`mini_deepseekv3`模型；实现 pretrain、sft。
+
 # 一、项目简介
 
 本项目旨在基于较小的算力，复现当前主流开源模型的架构，实现一个 100-200M 参数量版本的迷你模型。项目将数据集、训练流程等基础设施尽可能固定下来，以便在学习新的模型架构时能够快速复现，从而将主要精力聚焦在模型架构的学习和复现上。
@@ -76,19 +81,28 @@ bash ./scripts/download_data.sh
 
 界面如下图所示，可选择需要下载的数据集序号进行下载：
 
-![数据集下载界面](./assets/download_data_script.png)
+<div align="center">
+<img src="./assets/download_data_script.png" width="90%" alt="download_data">
+</div>
+
 
 其中：
 
 - [1] 下载按照5%的比例对OpenCSG Fineweb-Edu-Chinese-V2.1数据集进行采样的.parquet格式数据子集，用于训练tokenizer（你也可以直接使用训练好的tokenizer，文件位于项目的`mini_tokenizer`文件夹内）
 - [2] 下载**原始**OpenCSG Fineweb-Edu-Chinese-V2.1数据集中得分4-5的全部.parquet文件，用于预训练
 - [3] 下载按照20%的比例对OpenCSG Fineweb-Edu-Chinese-V2.1数据集进行采样的.parquet格式数据子集，用于预训练，采样按照类别等比例采样，分布与原始数据集一致：
-![OpenCSG Fineweb-Edu-Chinese-V2.1采样数据分布](./assets/sampled_source_distribution.png)
+<div align="center">
+<img src="./assets/sampled_source_distribution.png" width="60%" alt="sampled_source_distribution">
+</div>
+
 - [4] 下载按照20%的比例对OpenCSG Fineweb-Edu-Chinese-V2.1数据集进行采样的.bin格式数据子集，用于预训练（已通过`mini_tokenizer`处理为token ids）
 - [5] 下载匠数科技大模型数据集的全部.bin格式数据文件，用于预训练（已通过`mini_tokenizer`处理为token ids）
 - [6] 下载**原始**匠数科技大模型数据集的全部.jsonl格式数据文件，用于SFT
-- [7] 下载经过处理的匠数科技大模型数据集的.parquet格式数据文件，用于SFT（已通过`mini_tokenizer`处理为token ids，其中包括：a.转化为parquet格式的全部符合条件的SFT数据；b.采样的50000条采样数据和200条自我认知数据；c.将b.进行packing处理后的数据；推荐使用c.进行SFT），采样后的数据长度分布如下：
-![匠数科技大模型数据集采样数据长度分布](./assets/sampled_sft_data_length_distribution.png)
+- [7] 下载经过处理的匠数科技大模型数据集的.parquet格式数据文件，用于SFT（已通过`mini_tokenizer`处理为token ids，其中包括：(a) 转化为parquet格式的全部符合条件的SFT数据；(b) 采样的50000条采样数据和200条自我认知数据；(c) 将 (b) 进行packing处理后的数据；推荐使用 (c) 进行SFT），采样后的数据长度分布如下：
+
+<div align="center">
+<img src="./assets/sampled_sft_data_length_distribution.png" width="70%" alt="sampled_sft_data_length_distribution">
+</div>
 
 你可以选择直接下载处理好的数据进行训练（推荐），也可以选择下载原始数据自行处理，处理数据的代码位于：
 
@@ -116,15 +130,19 @@ python ./train/train_tokenizer.py
 
 模型结构参考论文、官方仓库源码、transformers实现等，其中的`hidden_states`形状统一为: `(B, H, L, D)`，其中`B`为batch size，`H`为头数，`L`为序列长度，`D`为每个头的维度。
 
-模型结构参考本人CSDN博客：
+模型结构参考本人 [github 博客](https://wkq9411.github.io/)：
 
-> 博客中的代码部分是基于早期版本的Mini-LLM实现的，与当前版本不完全一致，但核心思想是相同的。
+> 博客中的 `mini_llama3` 和 `mini_deepseekv3` 的代码部分是基于早期版本的Mini-LLM实现的，与当前版本不完全一致，但核心思想是相同的。
 
-1. `mini_deepseekv3`，MoE Model:
-   - [论文解读](https://blog.csdn.net/m0_55846238/article/details/148321958?spm=1011.2415.3001.5331)
-   - [代码解读](https://blog.csdn.net/m0_55846238/article/details/148354198#comments_37350939)
-2. `mini_llama3`，Dense Model:
-   - [代码解读](https://blog.csdn.net/m0_55846238/article/details/145728695?spm=1011.2415.3001.5331)
+1. `mini_llama3`，Dense Model:
+   - [代码解读](https://wkq9411.github.io/2026-01-01/Code-Llama3.html)
+2. `mini_deepseekv3`，MoE Model:
+   - [论文解读](https://wkq9411.github.io/2026-01-01/Paper-DeepSeek-V3.html)
+   - [代码解读](https://wkq9411.github.io/2026-01-01/Code-DeepSeek-V3.html)
+3. `mini_qwen3_next`，Linear Model:
+   - [论文解读 - Transformers are RNNs](https://wkq9411.github.io/2026-01-18/Paper-Transformers-are-RNNs.html)
+   - [论文解读 - Gated Delta Network](https://wkq9411.github.io/2026-01-18/Paper-Gated-Delta-Network.html)
+   - [论文解读 - Gated Attention](https://wkq9411.github.io/2026-01-18/Paper-Gated-Attention.html)
 
 ## （五）预训练
 
@@ -156,9 +174,13 @@ tensorboard --logdir=output/ --port=8080 --bind_all
 
 训练会记录通用的`learing_rate`、`loss`、`ppl`等指标，此外，以`mini_deepseekv3`模型为例，还额外记录了包括**专家负载情况**、**序列级辅助损失**、**mtp损失**等指标，如下图所示：
 
-![mini_deepseekv3预训练指标](./assets/load_balance.png)
+<div align="center">
+<img src="./assets/load_balance.png" width="90%" alt="load_balance">
+</div>
 
-![mini_deepseekv3预训练专家负载情况](./assets/training_progress.png)
+<div align="center">
+<img src="./assets/training_progress.png" width="90%" alt="training_progress">
+</div>
 
 > 其中，专家负载曲线通过记录每层的所有专家最大/最小激活次数的比值，趋近于1表示负载均衡，越大表示负载不均衡。
 
@@ -174,13 +196,20 @@ python ./train/sft.py --model_name=mini_deepseekv3 --max_batch_size=32
 
 SFT dataset可选择是否使用packing数据集，开启packing后，能够有效利用算力，同时让每个batch的实际有效token长度尽可能一致，从而避免梯度稀释问题。使用packing后，每个batch需要构造相应的`attention_mask`，可视化如下（pack了两条数据）：
 
-![SFT数据集packing后的attention_mask可视化](./assets/attention_mask_visualization.png)
+<div align="center">
+<img src="./assets/attention_mask_visualization.png" width="60%" alt="attention_mask_visualization">
+</div>
 
 packing后，sft曲线相对更加平滑。
 - packing的曲线：
-![SFT数据集packing后的训练曲线](./assets/packing_sft.png)
+<div align="center">
+<img src="./assets/packing_sft.png" width="60%" alt="packing_sft">
+</div>
+
 - 未packing的曲线：
-![SFT数据集未packing后的训练曲线](./assets/no_packing_sft.png)
+<div align="center">
+<img src="./assets/no_packing_sft.png" width="60%" alt="no_packing_sft">
+</div>
 
 ## （七）推理
 
@@ -202,7 +231,9 @@ python ./example/test_api.py --model_name=mini_deepseekv3
 
 以[CherryStudio](https://www.cherry-ai.com/)为例，配置好OpenAI兼容API后，对话效果如下：
 
-![CherryStudio对话效果](./assets/example.gif)
+<div align="center">
+<img src="./assets/example.gif" width="100%" alt="example">
+</div>
 
 此外，本项目的模型参数已上传至HuggingFace，可直接下载使用，调用方法见`example/use_example.ipynb`。
 

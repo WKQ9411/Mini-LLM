@@ -67,6 +67,11 @@ def generate(messages, model, tokenizer, max_new_tokens, temperature, top_p, top
             streamer=streamer,
             use_cache=True,
         )
+
+        # 如果模型是 mini_qwen3_next，手动初始化 MiniQwen3NextDynamicCache 以避免 transformers 默认初始化 DynamicCache 导致冲突
+        if args.model_name == "mini_qwen3_next":
+            from mini_models.cache import MiniQwen3NextDynamicCache
+            generation_kwargs["past_key_values"] = MiniQwen3NextDynamicCache(model.config)
         
         # 在单独线程中运行生成
         generation_thread = Thread(target=model.generate, kwargs=generation_kwargs)
