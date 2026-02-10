@@ -135,6 +135,28 @@ download_pretrain_sampled_tokenized() {
 }
 
 
+# 下载经过 mini_tokenizer 进行分词处理的全量 Fineweb 数据集
+download_pretrain_all_tokenized() {
+    echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (All Fineweb, tokenized by mini_tokenizer)...${NC}"
+    local download_dir="$PRETRAIN_DATA_PATH/bin"
+    
+    modelscope download \
+        --dataset 'wangkunqing/mini_llm_dataset' \
+        --include 'fineweb_edu.bin' \
+        --local_dir "$download_dir"
+    
+    if [ $? -eq 0 ]; then
+        cleanup_temp_files "$download_dir"
+        
+        echo -e "${GREEN}wangkunqing/mini_llm_dataset dataset download completed.${NC}"
+        return 0
+    else
+        echo -e "${RED}Error: Download command failed with exit code $?${NC}"
+        return 1
+    fi
+}
+
+
 # 下载经过 mini_tokenizer 进行分词处理的 DeepCtrl 数据集
 download_pretrain_deepctrl_tokenized() {
     echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (DeepCtrl, tokenized by mini_tokenizer)...${NC}"
@@ -264,13 +286,14 @@ download_tokenizer_data() {
 # 数据集配置数组
 # 格式: "ID|Name|Description|Function"
 declare -a DATASETS=(
-    "1|Tokenizer: 5% Sampled Dataset|Download 5% sampled Fineweb-Edu-Chinese-V2.1 dataset (~3.4 GB for tokenizer training)|download_tokenizer_data"
-    "2|Pretrain: Original Dataset|Download original Fineweb-Edu-Chinese-V2.1 dataset (the subset with scores 4-5, 9745 parquet files, ~70 GB)|download_pretrain_raw"
-    "3|Pretrain: 20% Sampled Dataset|Download 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~14 GB for faster pretraining)|download_pretrain_sampled"
-    "4|Pretrain: Tokenized 20% Sampled Dataset|Download tokenized 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~10 GB for faster pretraining, tokenized by mini_tokenizer)|download_pretrain_sampled_tokenized"
-    "5|Pretrain: Tokenized DeepCtrl Dataset|Download tokenized DeepCtrl dataset (~4 GB for pretraining, tokenized by mini_tokenizer)|download_pretrain_deepctrl_tokenized"
-    "6|SFT: DeepCtrl Dataset|Download original DeepCtrl dataset (~16 GB for SFT)|download_sft_data"
-    "7|SFT: Parquet Dataset|Download processed parquet SFT dataset (~3.7 GB for SFT)|download_sft_parquet"
+    "1|【Tokenizer】: 5% Sampled Dataset|Download 5% sampled Fineweb-Edu-Chinese-V2.1 dataset (~3.4 GB for tokenizer training)|download_tokenizer_data"
+    "2|【Pretrain】: Original Dataset|Download original Fineweb-Edu-Chinese-V2.1 dataset (the subset with scores 4-5, 9745 parquet files, ~70 GB)|download_pretrain_raw"
+    "3|【Pretrain】: 20% Sampled Dataset|Download 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~14 GB for faster pretraining)|download_pretrain_sampled"
+    "4|【Pretrain】: Tokenized 20% Sampled Dataset|Download tokenized 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~10 GB for faster pretraining, tokenized by mini_tokenizer)|download_pretrain_sampled_tokenized"
+    "5|【Pretrain】: Tokenized All Fineweb Dataset|Download tokenized all Fineweb-Edu-Chinese-V2.1 dataset (~50 GB for pretraining, tokenized by mini_tokenizer)|download_pretrain_all_tokenized"
+    "6|【Pretrain】: Tokenized DeepCtrl Dataset|Download tokenized DeepCtrl dataset (~4 GB for pretraining, tokenized by mini_tokenizer)|download_pretrain_deepctrl_tokenized"
+    "7|【SFT】: DeepCtrl Dataset|Download original DeepCtrl dataset (~16 GB for SFT)|download_sft_data"
+    "8|【SFT】: Parquet Dataset|Download processed parquet SFT dataset (~3.7 GB for SFT)|download_sft_parquet"
 )
 
 

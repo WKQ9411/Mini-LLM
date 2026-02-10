@@ -147,6 +147,31 @@ function Download-PretrainSampledTokenized {
 }
 
 
+# 下载经过 mini_tokenizer 进行分词处理的全量 Fineweb 数据集
+function Download-PretrainAllTokenized {
+    Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (All Fineweb, tokenized by mini_tokenizer)..." -ForegroundColor Green
+    $downloadDir = Join-Path $PRETRAIN_DATA_PATH "bin"
+    
+    try {
+        # 直接调用命令，输出到控制台显示进度
+        & modelscope download --dataset 'wangkunqing/mini_llm_dataset' --include 'fineweb_edu.bin' --local_dir $downloadDir
+        
+        if ($LASTEXITCODE -eq 0) {
+            Cleanup-TempFiles -Dir $downloadDir
+            
+            Write-Host "wangkunqing/mini_llm_dataset dataset download completed." -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+
 # 下载经过 mini_tokenizer 进行分词处理的 DeepCtrl 数据集
 function Download-PretrainDeepctrlTokenized {
     Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (DeepCtrl, tokenized by mini_tokenizer)..." -ForegroundColor Green
@@ -292,43 +317,49 @@ function Download-TokenizerData {
 $Datasets = @(
     @{
         Id = "1"
-        Name = "Tokenizer: 5% Sampled Dataset"
+        Name = "【Tokenizer】: 5% Sampled Dataset"
         Description = "Download 5% sampled Fineweb-Edu-Chinese-V2.1 dataset (~3.4 GB for tokenizer training)"
         Function = { Download-TokenizerData }
     },
     @{
         Id = "2"
-        Name = "Pretrain: Original Dataset"
+        Name = "【Pretrain】: Original Dataset"
         Description = "Download original Fineweb-Edu-Chinese-V2.1 dataset (the subset with scores 4-5, 9745 parquet files, ~70 GB)"
         Function = { Download-PretrainRaw }
     },
     @{
         Id = "3"
-        Name = "Pretrain: 20% Sampled Dataset"
+        Name = "【Pretrain】: 20% Sampled Dataset"
         Description = "Download 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~14 GB for faster pretraining)"
         Function = { Download-PretrainSampled }
     },
     @{
         Id = "4"
-        Name = "Pretrain: Tokenized 20% Sampled Dataset"
+        Name = "【Pretrain】: Tokenized 20% Sampled Dataset"
         Description = "Download tokenized 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~10 GB for faster pretraining, tokenized by mini_tokenizer)"
         Function = { Download-PretrainSampledTokenized }
     },
     @{
         Id = "5"
-        Name = "Pretrain: Tokenized DeepCtrl Dataset"
+        Name = "【Pretrain】: Tokenized All Fineweb Dataset"
+        Description = "Download tokenized all Fineweb-Edu-Chinese-V2.1 dataset (~50 GB for pretraining, tokenized by mini_tokenizer)"
+        Function = { Download-PretrainAllTokenized }
+    },
+    @{
+        Id = "6"
+        Name = "【Pretrain】: Tokenized DeepCtrl Dataset"
         Description = "Download tokenized DeepCtrl dataset (~4 GB for pretraining, tokenized by mini_tokenizer)"
         Function = { Download-PretrainDeepctrlTokenized }
     },
     @{
-        Id = "6"
-        Name = "SFT: DeepCtrl Dataset"
+        Id = "7"
+        Name = "【SFT】: DeepCtrl Dataset"
         Description = "Download original DeepCtrl dataset (~16 GB for SFT)"
         Function = { Download-SftData }
     },
     @{
-        Id = "7"
-        Name = "SFT: Parquet Dataset"
+        Id = "8"
+        Name = "【SFT】: Parquet Dataset"
         Description = "Download processed parquet SFT dataset (~3.7 GB for SFT)"
         Function = { Download-SftParquet }
     }
