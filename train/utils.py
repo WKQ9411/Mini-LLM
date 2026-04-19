@@ -404,7 +404,8 @@ def plot_curve(total_loss, total_ppl=None, save_path=None):
     window_size = min(50, len(total_loss) // 10) if len(total_loss) > 10 else 1
     if window_size > 1:
         smoothed_loss = np.convolve(total_loss, np.ones(window_size) / window_size, mode="valid")
-        smooth_iterations = range(window_size // 2, len(total_loss) - window_size // 2 + 1)
+        smooth_start = window_size // 2
+        smooth_iterations = range(smooth_start, smooth_start + len(smoothed_loss))
         ax1.plot(
             smooth_iterations,
             smoothed_loss,
@@ -438,7 +439,8 @@ def plot_curve(total_loss, total_ppl=None, save_path=None):
         window_size = min(50, len(total_ppl) // 10) if len(total_ppl) > 10 else 1
         if window_size > 1:
             smoothed_ppl = np.convolve(total_ppl, np.ones(window_size) / window_size, mode="valid")
-            smooth_iterations = range(window_size // 2, len(total_ppl) - window_size // 2 + 1)
+            smooth_start = window_size // 2
+            smooth_iterations = range(smooth_start, smooth_start + len(smoothed_ppl))
             ax2.plot(
                 smooth_iterations,
                 smoothed_ppl,
@@ -461,6 +463,234 @@ def plot_curve(total_loss, total_ppl=None, save_path=None):
     fig.patch.set_facecolor("white")
 
     # 保存图片
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", facecolor="white")
+    plt.close()
+
+
+def plot_curve_dpo(
+    dpo_loss,
+    reward_margin,
+    chosen_reward,
+    rejected_reward,
+    chosen_logp,
+    rejected_logp,
+    save_path=None,
+):
+    """
+    绘制 DPO 训练曲线并保存
+
+    Args:
+        dpo_loss (list): DPO 损失列表
+        reward_margin (list): 奖励间隔列表
+        chosen_reward (list): chosen 奖励列表
+        rejected_reward (list): rejected 奖励列表
+        chosen_logp (list): chosen logp 列表
+        rejected_logp (list): rejected logp 列表
+        save_path (str or None): 保存路径, 如果为None则不保存图片
+    """
+
+    plt.style.use("seaborn-v0_8")
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+    ax_loss = axes[0, 0]
+    ax_margin = axes[0, 1]
+    ax_reward = axes[1, 0]
+    ax_logp = axes[1, 1]
+
+    def _plot_with_smoothing(ax, values, light_color, dark_color, raw_label, smooth_label):
+        iterations = range(len(values))
+        ax.plot(
+            iterations,
+            values,
+            alpha=0.3,
+            color=light_color,
+            linewidth=1,
+            label=raw_label,
+        )
+
+        window_size = min(50, len(values) // 10) if len(values) > 10 else 1
+        if window_size > 1:
+            smoothed_values = np.convolve(values, np.ones(window_size) / window_size, mode="valid")
+            smooth_start = window_size // 2
+            smooth_iterations = range(smooth_start, smooth_start + len(smoothed_values))
+            ax.plot(
+                smooth_iterations,
+                smoothed_values,
+                color=dark_color,
+                linewidth=2.5,
+                label=smooth_label,
+            )
+        else:
+            ax.plot(iterations, values, color=dark_color, linewidth=2.5, label=smooth_label)
+
+    _plot_with_smoothing(
+        ax_loss,
+        dpo_loss,
+        light_color="lightblue",
+        dark_color="darkblue",
+        raw_label="Original DPO Loss",
+        smooth_label="Smoothed DPO Loss",
+    )
+    ax_loss.set_xlabel("Iterations", fontsize=12)
+    ax_loss.set_ylabel("Loss", fontsize=12)
+    ax_loss.set_title("DPO Loss Curve", fontsize=14, fontweight="bold")
+    ax_loss.grid(True, alpha=0.3)
+    ax_loss.legend()
+    ax_loss.set_facecolor("#f8f9fa")
+
+    _plot_with_smoothing(
+        ax_margin,
+        reward_margin,
+        light_color="khaki",
+        dark_color="darkgoldenrod",
+        raw_label="Original Reward Margin",
+        smooth_label="Smoothed Reward Margin",
+    )
+    ax_margin.set_xlabel("Iterations", fontsize=12)
+    ax_margin.set_ylabel("Margin", fontsize=12)
+    ax_margin.set_title("Reward Margin Curve", fontsize=14, fontweight="bold")
+    ax_margin.grid(True, alpha=0.3)
+    ax_margin.legend()
+    ax_margin.set_facecolor("#f8f9fa")
+
+    _plot_with_smoothing(
+        ax_reward,
+        chosen_reward,
+        light_color="lightgreen",
+        dark_color="darkgreen",
+        raw_label="Original Chosen Reward",
+        smooth_label="Smoothed Chosen Reward",
+    )
+    _plot_with_smoothing(
+        ax_reward,
+        rejected_reward,
+        light_color="lightcoral",
+        dark_color="darkred",
+        raw_label="Original Rejected Reward",
+        smooth_label="Smoothed Rejected Reward",
+    )
+    ax_reward.set_xlabel("Iterations", fontsize=12)
+    ax_reward.set_ylabel("Reward", fontsize=12)
+    ax_reward.set_title("Chosen/Rejected Reward Curves", fontsize=14, fontweight="bold")
+    ax_reward.grid(True, alpha=0.3)
+    ax_reward.legend()
+    ax_reward.set_facecolor("#f8f9fa")
+
+    _plot_with_smoothing(
+        ax_logp,
+        chosen_logp,
+        light_color="plum",
+        dark_color="purple",
+        raw_label="Original Chosen LogP",
+        smooth_label="Smoothed Chosen LogP",
+    )
+    _plot_with_smoothing(
+        ax_logp,
+        rejected_logp,
+        light_color="lightsalmon",
+        dark_color="sienna",
+        raw_label="Original Rejected LogP",
+        smooth_label="Smoothed Rejected LogP",
+    )
+    ax_logp.set_xlabel("Iterations", fontsize=12)
+    ax_logp.set_ylabel("LogP", fontsize=12)
+    ax_logp.set_title("Chosen/Rejected LogP Curves", fontsize=14, fontweight="bold")
+    ax_logp.grid(True, alpha=0.3)
+    ax_logp.legend()
+    ax_logp.set_facecolor("#f8f9fa")
+
+    plt.tight_layout()
+    fig.patch.set_facecolor("white")
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", facecolor="white")
+    plt.close()
+
+
+def plot_curve_grpo(
+    total_loss,
+    total_surrogate_loss,
+    total_kl,
+    total_mean_reward,
+    total_format_reward,
+    total_think_reward,
+    total_parse_reward,
+    total_correct_reward,
+    save_path=None,
+):
+    """
+    绘制 GRPO 训练曲线并保存
+
+    Args:
+        total_loss (list): 总损失列表
+        total_surrogate_loss (list): Surrogate 损失列表
+        total_kl (list): KL 散度列表
+        total_mean_reward (list): 平均奖励列表
+        total_format_reward (list): 格式奖励列表
+        total_think_reward (list): 思维链长度奖励列表
+        total_parse_reward (list): JSON 可解析奖励列表
+        total_correct_reward (list): 答案一致性奖励列表
+        save_path (str or None): 保存路径, 如果为None则不保存图片
+    """
+
+    plt.style.use("seaborn-v0_8")
+    fig, axes = plt.subplots(2, 4, figsize=(28, 10))
+
+    def _plot_with_smoothing(ax, values, light_color, dark_color, raw_label, smooth_label):
+        iterations = range(len(values))
+        ax.plot(
+            iterations,
+            values,
+            alpha=0.3,
+            color=light_color,
+            linewidth=1,
+            label=raw_label,
+        )
+
+        window_size = min(50, len(values) // 10) if len(values) > 10 else 1
+        if window_size > 1:
+            smoothed_values = np.convolve(values, np.ones(window_size) / window_size, mode="valid")
+            smooth_start = window_size // 2
+            smooth_iterations = range(smooth_start, smooth_start + len(smoothed_values))
+            ax.plot(
+                smooth_iterations,
+                smoothed_values,
+                color=dark_color,
+                linewidth=2.5,
+                label=smooth_label,
+            )
+        else:
+            ax.plot(iterations, values, color=dark_color, linewidth=2.5, label=smooth_label)
+
+    configs = [
+        (axes[0, 0], total_loss, "lightblue", "darkblue", "Loss", "Total Loss"),
+        (axes[0, 1], total_surrogate_loss, "khaki", "darkgoldenrod", "Surrogate", "Surrogate Loss"),
+        (axes[0, 2], total_kl, "plum", "purple", "KL", "KL Divergence"),
+        (axes[0, 3], total_mean_reward, "lightgreen", "darkgreen", "Reward", "Mean Reward"),
+        (axes[1, 0], total_format_reward, "lightskyblue", "steelblue", "Reward", "Format Reward"),
+        (axes[1, 1], total_think_reward, "peachpuff", "darkorange", "Reward", "Think Length Reward"),
+        (axes[1, 2], total_parse_reward, "lightcoral", "darkred", "Reward", "Parse Reward"),
+        (axes[1, 3], total_correct_reward, "palegreen", "seagreen", "Reward", "Correctness Reward"),
+    ]
+
+    for ax, data, light_color, dark_color, ylabel, title in configs:
+        _plot_with_smoothing(
+            ax, data,
+            light_color=light_color,
+            dark_color=dark_color,
+            raw_label=f"Original {title}",
+            smooth_label=f"Smoothed {title}",
+        )
+        ax.set_xlabel("Iterations", fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_title(f"{title} Curve", fontsize=14, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.set_facecolor("#f8f9fa")
+
+    plt.tight_layout()
+    fig.patch.set_facecolor("white")
+
     if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close()

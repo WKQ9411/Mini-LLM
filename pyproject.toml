@@ -24,6 +24,7 @@ dependencies = [
     "jsonlines",
     "tensorboard",
     "openai",
+    "opencc-python-reimplemented",
     "python-dotenv",
     "json-repair",
     "dotenv>=0.9.9",

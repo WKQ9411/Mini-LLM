@@ -63,6 +63,23 @@ def parse_args():
     return args
 
 
+# -------------------------------------------【辅助函数】------------------------------------------- #
+def _resolve_max_seq_len(args) -> int:
+    training_args_files = sorted(Path(args.base_model_path).glob("*_training_args.json"))
+    if training_args_files:
+        training_args_path = str(training_args_files[0])
+        base_model_training_args = load_args(training_args_path)
+        max_seq_len = int(base_model_training_args["max_seq_len"])
+        print(f"Loaded max_seq_len={max_seq_len} from: {training_args_path}")
+        return max_seq_len
+
+    _, Config = get_model_and_config(args.model_name)
+    config = Config.from_pretrained(args.base_model_path)
+    max_seq_len = int(config.max_position_embeddings)
+    print(f"Loaded max_seq_len={max_seq_len} from config: {args.base_model_path}")
+    return max_seq_len
+
+
 # -------------------------------------------【训练函数】------------------------------------------- #
 def train_process(args):
 
@@ -70,10 +87,8 @@ def train_process(args):
     # 设置当前使用的设备
     device = torch.device("cuda")
 
-    # 获取预训练模型的训练配置
-    model_args_path = f"{args.base_model_path}/pretrained_{args.model_name}_training_args.json"
-    base_model_training_args = load_args(model_args_path)
-    args.max_seq_len = base_model_training_args['max_seq_len']
+    # 获取预训练模型的最大序列长度
+    args.max_seq_len = _resolve_max_seq_len(args)
 
     # ------------------ 2. 数据准备 ------------------
     dataset = SFTDataset(

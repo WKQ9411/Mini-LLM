@@ -5,6 +5,8 @@ $SCRIPT_PATH = $PSScriptRoot
 $ROOT_PATH = Split-Path -Parent $SCRIPT_PATH
 $PRETRAIN_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "pretrain_data"
 $SFT_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "sft_data"
+$DPO_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "dpo_data"
+$GRPO_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "grpo_data"
 $TOKENIZER_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "tokenizer_data"
 
 # 清理临时文件的通用函数
@@ -147,6 +149,31 @@ function Download-PretrainSampledTokenized {
 }
 
 
+# 下载经过 mini_tokenizer 进行分词处理的 0.1% 采样子集（YaRN）
+function Download-YarnSampledTokenized {
+    Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (0.1% sampled, tokenized by mini_tokenizer)..." -ForegroundColor Green
+    $downloadDir = Join-Path $PRETRAIN_DATA_PATH "bin"
+    
+    try {
+        # 直接调用命令，输出到控制台显示进度
+        & modelscope download --dataset 'wangkunqing/mini_llm_dataset' --include 'fineweb_edu_sampled_0.1_percent.bin' --local_dir $downloadDir
+        
+        if ($LASTEXITCODE -eq 0) {
+            Cleanup-TempFiles -Dir $downloadDir
+            
+            Write-Host "wangkunqing/mini_llm_dataset dataset download completed." -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+
 # 下载经过 mini_tokenizer 进行分词处理的全量 Fineweb 数据集
 function Download-PretrainAllTokenized {
     Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (All Fineweb, tokenized by mini_tokenizer)..." -ForegroundColor Green
@@ -259,6 +286,119 @@ function Download-SftParquet {
 }
 
 
+# ========== DPO Data Functions ==========
+
+# 下载 DPO 数据集
+function Download-DpoData {
+    Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (DPO)..." -ForegroundColor Green
+    $downloadDir = $DPO_DATA_PATH
+
+    try {
+        & modelscope download --dataset 'wangkunqing/mini_llm_dataset' --include 'dpo_data.zip' --local_dir $downloadDir
+
+        if ($LASTEXITCODE -eq 0) {
+            Cleanup-TempFiles -Dir $downloadDir
+
+            # 解压文件到目标目录
+            $zipFile = Join-Path $downloadDir "dpo_data.zip"
+            if (Test-Path -PathType Leaf $zipFile) {
+                Write-Host "Extracting dpo_data.zip to dpo directory..." -ForegroundColor Yellow
+                Expand-Archive -Path $zipFile -DestinationPath $downloadDir -Force -ErrorAction Stop
+                Remove-Item -Path $zipFile -Force -ErrorAction SilentlyContinue
+                Write-Host "wangkunqing/mini_llm_dataset DPO dataset download and extraction completed." -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "Error: dpo_data.zip not found after download" -ForegroundColor Red
+                return $false
+            }
+        } else {
+            Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+
+# ========== GRPO Data Functions ==========
+
+# 下载 GRPO 数据集
+function Download-GrpoData {
+    Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (GRPO)..." -ForegroundColor Green
+    $downloadDir = $GRPO_DATA_PATH
+
+    try {
+        & modelscope download --dataset 'wangkunqing/mini_llm_dataset' --include 'grpo_data.zip' --local_dir $downloadDir
+
+        if ($LASTEXITCODE -eq 0) {
+            Cleanup-TempFiles -Dir $downloadDir
+
+            # 解压文件到目标目录
+            $zipFile = Join-Path $downloadDir "grpo_data.zip"
+            if (Test-Path -PathType Leaf $zipFile) {
+                Write-Host "Extracting grpo_data.zip to grpo directory..." -ForegroundColor Yellow
+                Expand-Archive -Path $zipFile -DestinationPath $downloadDir -Force -ErrorAction Stop
+                Remove-Item -Path $zipFile -Force -ErrorAction SilentlyContinue
+                Write-Host "wangkunqing/mini_llm_dataset GRPO dataset download and extraction completed." -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "Error: grpo_data.zip not found after download" -ForegroundColor Red
+                return $false
+            }
+        } else {
+            Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+
+# 下载 Fineweb-Edu-Chinese-V2.2 SFT 数据集
+function Download-SftFinewebV22 {
+    Write-Host "Downloading opencsg/Fineweb-Edu-Chinese-V2.2 dataset..." -ForegroundColor Green
+    $downloadDir = Join-Path $SFT_DATA_PATH "fineweb"
+    
+    try {
+        # 直接调用命令，输出到控制台显示进度
+        & modelscope download --dataset 'opencsg/Fineweb-Edu-Chinese-V2.2' --include 'sft/cleaned/*.jsonl' --local_dir $downloadDir
+
+        if ($LASTEXITCODE -eq 0) {
+            Cleanup-TempFiles -Dir $downloadDir
+
+            # 将 sft/cleaned 下的所有 jsonl 文件上移到 fineweb 根目录
+            $cleanedDir = Join-Path (Join-Path $downloadDir "sft") "cleaned"
+            if (Test-Path -PathType Container $cleanedDir) {
+                Write-Host "Moving jsonl files from sft/cleaned to fineweb directory..." -ForegroundColor Yellow
+                Get-ChildItem -Path $cleanedDir -Filter "*.jsonl" -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    $destination = Join-Path $downloadDir $_.Name
+                    Move-Item -Path $_.FullName -Destination $destination -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            # 删除 sft 目录
+            $sftDir = Join-Path $downloadDir "sft"
+            if (Test-Path -PathType Container $sftDir) {
+                Remove-Item -Path $sftDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            
+            Write-Host "opencsg/Fineweb-Edu-Chinese-V2.2 dataset download completed." -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+
 # ========== Tokenizer Data Functions ==========
 
 # 下载 Tokenizer 训练数据
@@ -353,15 +493,33 @@ $Datasets = @(
     },
     @{
         Id = "7"
-        Name = "【SFT】: DeepCtrl Dataset"
+        Name = "【YaRN】: Tokenized 0.1% Sampled Dataset"
+        Description = "Download tokenized 0.1% sampled Fineweb-Edu-Chinese-V2.1 dataset (~40 MB for YaRN, tokenized by mini_tokenizer)"
+        Function = { Download-YarnSampledTokenized }
+    },
+    @{
+        Id = "8"
+        Name = "【SFT】: Original DeepCtrl Dataset"
         Description = "Download original DeepCtrl dataset (~16 GB for SFT)"
         Function = { Download-SftData }
     },
     @{
-        Id = "8"
+        Id = "9"
         Name = "【SFT】: Parquet Dataset"
         Description = "Download processed parquet SFT dataset (~3.7 GB for SFT)"
         Function = { Download-SftParquet }
+    },
+    @{
+        Id = "10"
+        Name = "【DPO】: DPO Dataset"
+        Description = "Download processed DPO dataset (~160 MB for DPO)"
+        Function = { Download-DpoData }
+    },
+    @{
+        Id = "11"
+        Name = "【GRPO】: GRPO Dataset"
+        Description = "Download processed GRPO dataset (~3 MB for GRPO)"
+        Function = { Download-GrpoData }
     }
 )
 

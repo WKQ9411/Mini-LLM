@@ -1,19 +1,30 @@
 # Mini-LLM
 
 <p align="center">
-    <img src="./assets/logo.png" width="300"/>
-<p>
-
-<p align="center">
-        🤗 <a href="https://huggingface.co/WKQ9411">Hugging Face</a>&nbsp&nbsp | &nbsp&nbsp🤖 <a href="https://www.modelscope.cn/datasets/wangkunqing/mini_llm_dataset">ModelScope</a>&nbsp&nbsp
-<br>
-<a href="README.md">Chinese</a>&nbsp&nbsp
+   <img src="./assets/logo.png" width="300"/>
 </p>
+
+<div align="center" style="line-height: 1;">
+  <a href="https://huggingface.co/WKQ9411">
+    <img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-WKQ9411-ffc107?color=ffc107&logoColor=white"/>
+  </a>
+  <a href="https://www.modelscope.cn/datasets/wangkunqing/mini_llm_dataset">
+    <img alt="ModelScope" src="https://img.shields.io/badge/%F0%9F%A4%96%20ModelScope-mini__llm__dataset-624aff?color=624aff&logoColor=white"/>
+  </a>
+  <a href="./assets/wechat.png">
+    <img alt="WeChat" src="https://img.shields.io/badge/WeChat-QR%20Code-brightgreen?logo=wechat&logoColor=white"/>
+  </a>
+  <br>
+  <a href="README.md">
+    <img alt="Chinese" src="https://img.shields.io/badge/Docs-Chinese-blue"/>
+  </a>
+</div>
 
 # Changelog
 
+- [2026-04-19] Added YaRN, DPO, and GRPO.
 - [2026-02-01] Implemented `mini_qwen3_next` model; optimized multi-turn conversation data construction; optimized `mini_models` structure.
-- [2025-12-29] Project initialization; implemented `mini_llama3` and `mini_deepseekv3` models; implemented pretrain and sft.
+- [2025-12-29] Refactored the project for transformers compatibility; implemented `mini_llama3` and `mini_deepseekv3` models; implemented pretrain and SFT.
 
 # I. Project Introduction
 
@@ -60,12 +71,21 @@ Mainly using the high-quality corpus portion with scores of 4-5 from this datase
 - Use 5% sampling of this dataset as tokenizer training data
 - Use 20% sampling of this dataset as pre-training data
 - If computational resources are sufficient, the full dataset can also be used for pre-training
+- Use 0.1% sampling of this dataset as YaRN fine-tuning data
 
 2. [DeepCtrl Large Model Dataset](https://www.modelscope.cn/datasets/deepctrl/deepctrl-sft-data)
 
 Approximately 16GB, main uses:
 - Use the entire dataset as pre-training data
 - Sample 50,000 entries as SFT data
+
+3. [OpenCSG UltraFeedback-chinese Dataset](https://huggingface.co/datasets/opencsg/UltraFeedback-chinese)
+
+The `ultrafeedback-chinese-binarized-lowest` subset is used as the DPO dataset. Training subsets can be selected according to the DPO score range.
+
+4. A self-synthesized GRPO dataset.
+
+The dataset is synthesized with Gemini 3.1 Pro. The task is to repair or modify JSON format, and each sample contains `prompt`, `thinking`, and `response`. The `prompt` gives a simple JSON with errors or modification requirements, `thinking` is the synthesized chain of thought, and `response` is the JSON output without extra explanations.
 
 ### 2. Dataset Preparation
 
@@ -87,21 +107,26 @@ The interface is shown in the figure below, where you can select the dataset num
 
 Among them:
 
-- [1] Download a .parquet format data subset sampled at 5% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for training tokenizer (you can also directly use the pre-trained tokenizer, located in the project's `mini_tokenizer` folder)
-- [2] Download **all original** .parquet files with scores 4-5 from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training
-- [3] Download a .parquet format data subset sampled at 20% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training. Sampling is done proportionally by category, maintaining the same distribution as the original dataset:
+- [1] [Tokenizer] Download a .parquet format data subset sampled at 5% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for training tokenizer (you can also directly use the pre-trained tokenizer, located in the project's `mini_tokenizer` folder)
+- [2] [Pretrain] Download **all original** .parquet files with scores 4-5 from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training
+- [3] [Pretrain] Download a .parquet format data subset sampled at 20% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training. Sampling is done proportionally by category, maintaining the same distribution as the original dataset:
 <div align="center">
 <img src="./assets/sampled_source_distribution.png" width="60%" alt="sampled_source_distribution">
 </div>
 
-- [4] Download a .bin format data subset sampled at 20% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training (processed into token ids by `mini_tokenizer`)
-- [5] Download all .bin format data files from the DeepCtrl large model dataset for pre-training (processed into token ids by `mini_tokenizer`)
-- [6] Download **all original** .jsonl format data files from the DeepCtrl large model dataset for SFT
-- [7] Download processed .parquet format data files from the DeepCtrl large model dataset for SFT (processed into token ids by `mini_tokenizer`, including: (a) all eligible SFT data converted to parquet format; (b) sampled 50,000 entries and 200 self-awareness entries; (c) data after packing (b); it is recommended to use (c) for SFT). The length distribution of sampled data is as follows:
+- [4] [Pretrain] Download a .bin format data subset sampled at 20% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training (processed into token ids by `mini_tokenizer`)
+- [5] [Pretrain] Download all .bin format data files with scores 4-5 from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for pre-training (processed into token ids by `mini_tokenizer`)
+- [6] [Pretrain] Download all .bin format data files from the DeepCtrl large model dataset for pre-training (processed into token ids by `mini_tokenizer`)
+- [7] [YaRN] Download a .bin format data subset sampled at 0.1% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset for YaRN fine-tuning (processed into token ids by `mini_tokenizer`)
+- [8] [SFT] Download **all original** .jsonl format data files from the DeepCtrl large model dataset for SFT
+- [9] [SFT] Download processed .parquet format data files from the DeepCtrl large model dataset for SFT (processed into token ids by `mini_tokenizer`, including: (a) all eligible SFT data converted to parquet format; (b) sampled 50,000 entries and 200 self-awareness entries; (c) data after packing (b); it is recommended to use (c) for SFT). The length distribution of sampled data is as follows:
 
 <div align="center">
 <img src="./assets/sampled_sft_data_length_distribution.png" width="70%" alt="sampled_sft_data_length_distribution">
 </div>
+
+- [10] [DPO] Download the processed DPO dataset
+- [11] [GRPO] Download the synthesized GRPO dataset
 
 You can choose to directly download processed data for training (recommended), or download raw data and process it yourself. Data processing code is located at:
 
@@ -109,14 +134,16 @@ You can choose to directly download processed data for training (recommended), o
 ./scripts/prepare_tokenizer_data.py
 ./scripts/prepare_pretrain_data.py
 ./scripts/prepare_sft_data.py
+./scripts/prepare_dpo_data.py
+./scripts/prepare_grpo_data.py
 ```
 
-This project currently uses: [1] for training tokenizer, [4]+[5] for pre-training (merge .bin files through the `merge_pretrain_data` function in `prepare_pretrain_data.py`), and c. from [7] for SFT.
+This project currently uses: [1] for training tokenizer, [4]+[6] for pre-training (merge .bin files through the `merge_pretrain_data` function in `prepare_pretrain_data.py`), and (c) from [9] for SFT.
 
 ## (III) Training Tokenizer
 
 The new version of mini_tokenizer is consistent with Qwen, using special tokens including: `<|endoftext|>`, `<|im_start|>`, `<|im_end|>`, `<think>`, `</think>`.
-The base vocabulary size is 32,000 (including `<|endoftext|>`), and `<|im_start|>`, `<|im_end|>`, `<think>`, `</think>` are added as added tokens to the vocabulary, so the vocabulary size is 32,004 (among them, `<think>` and `</think>` are currently unused, and will be considered for use when updating RL-related code in the future). The chat template is located at `data/tokenizer_data/chat_template.jinja2`. The current chat template is only based on `user`, `assistant`, and automatically matches the content of the `think` part.
+The base vocabulary size is 32,000 (including `<|endoftext|>`), and `<|im_start|>`, `<|im_end|>`, `<think>`, `</think>` are added as added tokens to the vocabulary, so the vocabulary size is 32,004. Tokenizer usage can be found in `example/tokenizer_example.ipynb`. The chat template is located at `data/tokenizer_data/chat_template.jinja2`.
 You can directly use the pre-trained `mini_tokenizer`, or retrain it. To retrain, execute:
 
 ```shell
@@ -210,7 +237,93 @@ After packing, the SFT curve is relatively smoother.
 <img src="./assets/no_packing_sft.png" width="60%" alt="no_packing_sft">
 </div>
 
-## (VII) Inference
+> Due to the characteristics of Linear Models, packing SFT for `mini_qwen3_next` is currently not supported. See [Issues #3](https://github.com/WKQ9411/Mini-LLM/issues/3).
+
+## (VII) YaRN
+
+For the theoretical part of YaRN, please refer to the blog: [YaRN Paper Notes](https://wkq9411.github.io/2026-01-01/Paper-YaRN.html)
+
+Pass the `rope_scaling` parameter into the model configuration, for example:
+
+```python
+rope_scaling = {
+   "rope_type": "yarn",
+   "factor": 4.0,
+   "attention_factor": None,  # Defaults to None and is calculated internally
+   "beta_fast": 32,
+   "beta_slow": 1,
+}
+```
+
+Optionally fine-tune on a small amount of long-text data:
+
+```shell
+python ./train/yarn.py --model_name mini_llama3 --max_seq_len 2048
+```
+
+For more training parameter descriptions, please refer to the `parse_args()` function in `train/yarn.py`.
+
+To evaluate long-text PPL under three settings: before adding YaRN, adding YaRN without fine-tuning, and adding YaRN with fine-tuning:
+
+```shell
+python ./eval/eval_yarn.py --base_model_path output/pretrained_mini_llama3 --yarn_finetuned_model_path output/yarn_mini_llama3
+```
+
+The results are as follows:
+
+<div align="center">
+<img src="./assets/eval_yarn_ppl_curve.png" width="90%" alt="yarn">
+</div>
+
+It can be seen that after adding YaRN, long-text PPL decreases significantly compared with the original model. In addition, after adding YaRN and fine-tuning, long-text PPL decreases further. However, outside the fine-tuning length range, PPL gradually rises. This may be because the fine-tuned model has learned new positional encoding semantics, making its extrapolation ability weaker than the model that only inserts YaRN without additional fine-tuning. Therefore, if the target is long-text modeling within a fixed length range, fine-tuning on a small amount of long-text data can be used; if extrapolation beyond the training length is more important, YaRN can be inserted only during inference or evaluation without extra fine-tuning.
+
+## (VIII) DPO
+
+For the theoretical part of DPO, please refer to the blog: [DPO Paper Notes](https://wkq9411.github.io/2026-03-11/Paper-DPO.html)
+
+Run the following command:
+
+```shell
+python ./train/dpo.py --model_name mini_llama3
+```
+
+For more training parameter descriptions, please refer to the `parse_args()` function in `train/dpo.py`. Since DPO can easily destabilize small models, smaller learning rates and a smaller $\beta$ are usually used. In addition, optional optimizations such as DPOP, parameter freezing, and SFT on chosen responses before DPO are provided.
+
+DPOP is a variant of DPO. It adds a positive constraint term for the chosen response after the DPO loss: when the policy model assigns a lower log probability to the chosen response than the reference model, an extra penalty `lambda * max(ref_chosen_logp - policy_chosen_logp, 0)` is added. This prevents the model from lowering the probability of the chosen response itself while trying to enlarge the preference gap between chosen and rejected responses. In this project's small-model setting, DPOP is usually more stable than direct DPO, and can be enabled with `--loss_type dpop --dpop_lambda 1.0`.
+
+DPO training results are as follows:
+
+<div align="center">
+<img src="./assets/dpop+sft_warmup_more_aggressive.png" width="90%" alt="dpo_progress">
+</div>
+
+For detailed comparisons, please refer to `eval/eval_dpo.ipynb`.
+
+## (IX) GRPO
+
+For the theoretical part of GRPO, please refer to the blog: [From Policy Gradient to PPO and GRPO](https://wkq9411.github.io/2026-03-22/RL-PG-PPO-GRPO.html)
+
+The GRPO example task in this project is JSON repair or modification: given an erroneous JSON or a modification request in the prompt, the model first gives a short reasoning process in `<think>...</think>`, and then outputs the final JSON in a fenced JSON code block. During cold start, to preserve a certain level of instruction-following ability and avoid the loss quickly collapsing into the narrow distribution of the JSON task, a portion of general data is added. The final cold-start data contains 800 general samples and 1200 JSON task samples.
+
+The current reward function mainly consists of four parts: output format reward, thinking length reward, JSON parseability reward, and correctness reward. The correctness reward has the highest weight and encourages the model to output JSON consistent with the ground truth; the other rewards constrain the output structure to prevent small models from producing unparsable or malformed outputs during RL.
+
+Run the following command:
+
+```shell
+python ./train/grpo.py --model_name mini_llama3 --max_batch_size 4 --cold_start_sft --sft_batch_size 16 --sft_epochs 3 --grpo_epochs 2
+```
+
+For more training parameter descriptions, please refer to the `parse_args()` function in `train/grpo.py`. By default, GRPO loads the SFT model from `output/sft_{model_name}` as the initial policy. When `--cold_start_sft` is enabled, it first runs task-format cold-start SFT using `data/grpo_data/cold_start.jsonl`, and then enters GRPO training. If you want to continue pre-training on the JSON task corpus, you can also enable `--mid_training` (although the effect may be limited).
+
+Training results are as follows:
+
+<div align="center">
+<img src="./assets/grpo_curve.png" width="90%" alt="grpo_curve">
+</div>
+
+The results show that after GRPO, the model further improves in format following and JSON parseability, and the correctness is significantly better than using cold-start SFT only. For detailed comparisons, please refer to `eval/eval_grpo.ipynb`.
+
+## (X) Inference
 
 Inference demo code is located in the `example` folder. You can use the project's custom `Generator` class for inference, or use transformers' native `generate` method for inference.
 
@@ -237,4 +350,16 @@ Taking [CherryStudio](https://www.cherry-ai.com/) as an example, after configuri
 In addition, the model parameters of this project have been uploaded to HuggingFace and can be directly downloaded and used. Usage methods can be found in `example/use_example.ipynb`.
 
 > Due to the small model parameter size, while it may predict the next token relatively well to some extent, this does not mean it has good generalization ability, knowledge base, or reasoning ability. Small models are more likely to "remember" surface patterns in training data (such as specific phrases, sentence structures, formats) rather than truly "understand" their meaning. This causes them to easily produce hallucinations and incoherent outputs when facing prompts that require knowledge, reasoning, or slightly deviate from training patterns.
+
+# Star History
+
+<div align="center">
+  <a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&logscale=&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left" />
+      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left" />
+    </picture>
+  </a>
+</div>
 

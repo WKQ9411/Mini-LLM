@@ -30,6 +30,7 @@ class MiniDeepSeekV3Config(PretrainedConfig):
         qk_rope_head_dim (int): 解耦的带 RoPE 的 q_t^R 和 k_t^R 的每个头的维度【对应论文中的 d_h^R】
         v_head_dim (int): value 的每个头的维度, 可以与 qk_nope_head_dim 不同【但在论文中也同样设定为 d_h】
         rope_theta (float): 旋转位置编码的基底【即 θ_d=b^(-2d/D) 中的 b】
+        rope_scaling (dict): ROPE 缩放参数
         use_mtp (bool): 是否使用 MTP 策略
         mtp_loss_lambda (float): MTP 损失的权重
     """
@@ -68,6 +69,7 @@ class MiniDeepSeekV3Config(PretrainedConfig):
         v_head_dim: int = 64,
         # ---- RoPE ----
         rope_theta: float = 10000.0,
+        rope_scaling: dict = None,
         # ---- MTP ----
         use_mtp: bool = True,
         mtp_loss_lambda: float = 0.0001,
@@ -104,7 +106,8 @@ class MiniDeepSeekV3Config(PretrainedConfig):
         self.v_head_dim = v_head_dim
 
         self.rope_theta = rope_theta
-
+        self.rope_scaling = rope_scaling
+        
         self.use_mtp = use_mtp
         self.mtp_loss_lambda = mtp_loss_lambda
 

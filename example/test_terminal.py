@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("--generate_func", type=str, default="custom", choices=["custom", "transformers"], help="Generate function: 'custom' or 'transformers'")
     parser.add_argument("--chat_mode", type=str, default="chat", choices=["chat", "generation"], help="Chat mode: 'chat' for chat model or 'generation' for pretrained model")
     parser.add_argument("--max_history_messages", type=int, default=5, help="Max history messages, only used in chat mode")
+    parser.add_argument("--enable_think", action="store_true", help="Enable think-mode prompt prefix in chat mode")
     
     parser.add_argument("--max_new_tokens", type=int, default=512, help="Max new tokens")
     parser.add_argument("--temperature", type=float, default=1.0, help="Temperature")
@@ -44,6 +45,28 @@ def load_model(args):
     return tokenizer, model
 
 
+def _use_think_mode(args) -> bool:
+    return args.chat_mode == "chat" and args.enable_think
+
+
+def _apply_chat_template(tokenizer, messages, args) -> str:
+    template_kwargs = {
+        "tokenize": False,
+        "add_generation_prompt": True,
+    }
+    if _use_think_mode(args):
+        template_kwargs["enable_think"] = True
+    return tokenizer.apply_chat_template(messages, **template_kwargs)
+
+
+def _emit_prefilled_think(args) -> str:
+    if not _use_think_mode(args):
+        return ""
+    think_prefix = "<think>\n"
+    print(think_prefix, end="", flush=True)
+    return think_prefix
+
+
 def generate_with_custom(messages, model, tokenizer, args):
     """使用自定义 Generator 生成回复，返回完整文本"""
     generator = Generator(model, tokenizer)
@@ -51,7 +74,7 @@ def generate_with_custom(messages, model, tokenizer, args):
     # 构建输入
     if args.chat_mode == "chat":
         # 使用聊天模板
-        formatted_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        formatted_text = _apply_chat_template(tokenizer, messages, args)
         input_ids = tokenizer(formatted_text, return_tensors="pt")["input_ids"].to(model.device)
     else:
         # generation mode，确保只使用最后一条消息
@@ -59,7 +82,7 @@ def generate_with_custom(messages, model, tokenizer, args):
         input_ids = tokenizer(input_text, return_tensors="pt")["input_ids"].to(model.device)
     
     # 流式生成并收集完整文本
-    full_response = ""
+    full_response = _emit_prefilled_think(args)
     for text_chunk in generator.generate(
         input_ids=input_ids,
         max_new_tokens=args.max_new_tokens,
@@ -81,7 +104,7 @@ def generate_with_transformers(messages, model, tokenizer, args):
     # 构建输入
     if args.chat_mode == "chat":
         # 使用聊天模板
-        formatted_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        formatted_text = _apply_chat_template(tokenizer, messages, args)
         inputs = tokenizer(formatted_text, return_tensors="pt").to(model.device)
     else:
         # generation mode，确保只使用最后一条消息
@@ -119,7 +142,7 @@ def generate_with_transformers(messages, model, tokenizer, args):
     generation_thread.start()
     
     # 流式输出并收集完整文本
-    full_response = ""
+    full_response = _emit_prefilled_think(args)
     for text in streamer:
         print(text, end="", flush=True)
         full_response += text
@@ -155,6 +178,7 @@ def main():
     print(f"Model info: {json.dumps(get_model_info(model)[1], indent=2)}")
     print(f"Generate function: {args.generate_func}")
     print(f"Chat mode: {args.chat_mode}")
+    print(f"Enable think: {args.enable_think}")
     if args.chat_mode == "chat":
         print(f"Max history messages: {args.max_history_messages}")
 

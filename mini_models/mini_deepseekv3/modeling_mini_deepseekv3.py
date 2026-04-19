@@ -364,6 +364,7 @@ class MiniDeepSeekV3Model(MiniDeepSeekV3PreTrainedModel):
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.qk_rope_head_dim,
             rope_theta=config.rope_theta,
+            rope_scaling=config.rope_scaling,
         )
 
         # 调用父类方法，其中主要会进行：
@@ -519,6 +520,7 @@ class MiniDeepSeekV3MTP(nn.Module):
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.qk_rope_head_dim,
             rope_theta=config.rope_theta,
+            rope_scaling=config.rope_scaling,
         )
     
     def forward(

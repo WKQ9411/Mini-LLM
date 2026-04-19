@@ -5,6 +5,8 @@ SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_PATH="$(dirname "$SCRIPT_PATH")"
 PRETRAIN_DATA_PATH="$ROOT_PATH/data/pretrain_data"
 SFT_DATA_PATH="$ROOT_PATH/data/sft_data"
+DPO_DATA_PATH="$ROOT_PATH/data/dpo_data"
+GRPO_DATA_PATH="$ROOT_PATH/data/grpo_data"
 TOKENIZER_DATA_PATH="$ROOT_PATH/data/tokenizer_data"
 
 # 颜色定义
@@ -135,6 +137,28 @@ download_pretrain_sampled_tokenized() {
 }
 
 
+# 下载经过 mini_tokenizer 进行分词处理的 0.1% 采样子集（YaRN）
+download_yarn_sampled_tokenized() {
+    echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (0.1% sampled, tokenized by mini_tokenizer)...${NC}"
+    local download_dir="$PRETRAIN_DATA_PATH/bin"
+    
+    modelscope download \
+        --dataset 'wangkunqing/mini_llm_dataset' \
+        --include 'fineweb_edu_sampled_0.1_percent.bin' \
+        --local_dir "$download_dir"
+    
+    if [ $? -eq 0 ]; then
+        cleanup_temp_files "$download_dir"
+        
+        echo -e "${GREEN}wangkunqing/mini_llm_dataset dataset download completed.${NC}"
+        return 0
+    else
+        echo -e "${RED}Error: Download command failed with exit code $?${NC}"
+        return 1
+    fi
+}
+
+
 # 下载经过 mini_tokenizer 进行分词处理的全量 Fineweb 数据集
 download_pretrain_all_tokenized() {
     echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (All Fineweb, tokenized by mini_tokenizer)...${NC}"
@@ -242,6 +266,86 @@ download_sft_parquet() {
 }
 
 
+# ========== DPO Data Functions ==========
+# 下载 DPO 数据集
+download_dpo_data() {
+    echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (DPO)...${NC}"
+    local download_dir="$DPO_DATA_PATH"
+
+    modelscope download \
+        --dataset 'wangkunqing/mini_llm_dataset' \
+        --include 'dpo_data.zip' \
+        --local_dir "$download_dir"
+
+    if [ $? -eq 0 ]; then
+        cleanup_temp_files "$download_dir"
+
+        # 解压文件到目标目录
+        if [ -f "$download_dir/dpo_data.zip" ]; then
+            echo -e "${YELLOW}Extracting dpo_data.zip to dpo directory...${NC}"
+            unzip -o "$download_dir/dpo_data.zip" -d "$download_dir/" 2>/dev/null
+
+            if [ $? -eq 0 ]; then
+                # 删除 zip 文件
+                rm -f "$download_dir/dpo_data.zip"
+
+                echo -e "${GREEN}wangkunqing/mini_llm_dataset DPO dataset download and extraction completed.${NC}"
+                return 0
+            else
+                echo -e "${RED}Error: Failed to extract dpo_data.zip${NC}"
+                return 1
+            fi
+        else
+            echo -e "${RED}Error: dpo_data.zip not found after download${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}Error: Download command failed with exit code $?${NC}"
+        return 1
+    fi
+}
+
+
+# ========== GRPO Data Functions ==========
+# 下载 GRPO 数据集
+download_grpo_data() {
+    echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (GRPO)...${NC}"
+    local download_dir="$GRPO_DATA_PATH"
+
+    modelscope download \
+        --dataset 'wangkunqing/mini_llm_dataset' \
+        --include 'grpo_data.zip' \
+        --local_dir "$download_dir"
+
+    if [ $? -eq 0 ]; then
+        cleanup_temp_files "$download_dir"
+
+        # 解压文件到目标目录
+        if [ -f "$download_dir/grpo_data.zip" ]; then
+            echo -e "${YELLOW}Extracting grpo_data.zip to grpo directory...${NC}"
+            unzip -o "$download_dir/grpo_data.zip" -d "$download_dir/" 2>/dev/null
+
+            if [ $? -eq 0 ]; then
+                # 删除 zip 文件
+                rm -f "$download_dir/grpo_data.zip"
+
+                echo -e "${GREEN}wangkunqing/mini_llm_dataset GRPO dataset download and extraction completed.${NC}"
+                return 0
+            else
+                echo -e "${RED}Error: Failed to extract grpo_data.zip${NC}"
+                return 1
+            fi
+        else
+            echo -e "${RED}Error: grpo_data.zip not found after download${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}Error: Download command failed with exit code $?${NC}"
+        return 1
+    fi
+}
+
+
 # ========== Tokenizer Data Functions ==========
 
 # 下载 Tokenizer 训练数据
@@ -292,8 +396,11 @@ declare -a DATASETS=(
     "4|【Pretrain】: Tokenized 20% Sampled Dataset|Download tokenized 20% sampled Fineweb-Edu-Chinese-V2.1 dataset (~10 GB for faster pretraining, tokenized by mini_tokenizer)|download_pretrain_sampled_tokenized"
     "5|【Pretrain】: Tokenized All Fineweb Dataset|Download tokenized all Fineweb-Edu-Chinese-V2.1 dataset (~50 GB for pretraining, tokenized by mini_tokenizer)|download_pretrain_all_tokenized"
     "6|【Pretrain】: Tokenized DeepCtrl Dataset|Download tokenized DeepCtrl dataset (~4 GB for pretraining, tokenized by mini_tokenizer)|download_pretrain_deepctrl_tokenized"
-    "7|【SFT】: DeepCtrl Dataset|Download original DeepCtrl dataset (~16 GB for SFT)|download_sft_data"
-    "8|【SFT】: Parquet Dataset|Download processed parquet SFT dataset (~3.7 GB for SFT)|download_sft_parquet"
+    "7|【YaRN】: Tokenized 0.1% Sampled Dataset|Download tokenized 0.1% sampled Fineweb-Edu-Chinese-V2.1 dataset (~40 MB for YaRN, tokenized by mini_tokenizer)|download_yarn_sampled_tokenized"
+    "8|【SFT】: Original DeepCtrl Dataset|Download original DeepCtrl dataset (~16 GB for SFT)|download_sft_data"
+    "9|【SFT】: Parquet Dataset|Download processed parquet SFT dataset (~3.7 GB for SFT)|download_sft_parquet"
+    "10|【DPO】: DPO Dataset|Download processed DPO dataset (~160 MB for DPO)|download_dpo_data"
+    "11|【GRPO】: GRPO Dataset|Download processed GRPO dataset (~3 MB for GRPO)|download_grpo_data"
 )
 
 

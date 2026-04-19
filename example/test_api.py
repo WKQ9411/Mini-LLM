@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--weight_path", type=str, default=None, help="Weight path, if not provided, will use the default output directory")
 
     parser.add_argument("--generate_func", type=str, default="custom", choices=["custom", "transformers"], help="Generate function: 'custom' or 'transformers'")
+    parser.add_argument("--enable_think", action="store_true", help="Enable think-mode prompt prefix for chat completions")
     parser.add_argument("--port", type=int, default=9411, help="Port to run the server on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to run the server on")
     parser.add_argument("--require-api-key", type=lambda x: x.lower() in ["true", "1", "yes"], default=True, help="Require API Key")
@@ -46,9 +47,22 @@ def load_model(args):
     return tokenizer, model
 
 
+def _apply_chat_template(tokenizer, messages, args) -> str:
+    template_kwargs = {
+        "tokenize": False,
+        "add_generation_prompt": True,
+    }
+    if args.enable_think:
+        template_kwargs["enable_think"] = True
+    return tokenizer.apply_chat_template(messages, **template_kwargs)
+
+
 def generate(messages, model, tokenizer, max_new_tokens, temperature, top_p, top_k, repetition_penalty, frequency_penalty, args):
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    prompt = _apply_chat_template(tokenizer, messages, args)
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+
+    if args.enable_think:
+        yield "<think>\n"
     
     if args.generate_func == "transformers":
         inputs.pop("token_type_ids", None)
@@ -111,6 +125,7 @@ def main():
     print(f"Using device: {model.device}")
     print(f"Model info: {json.dumps(get_model_info(model)[1], indent=2)}")
     print(f"Generate function: {args.generate_func}")
+    print(f"Enable think: {args.enable_think}")
 
     # 调用 wrap-openai 封装 openai 兼容 api
     register_kwargs = {

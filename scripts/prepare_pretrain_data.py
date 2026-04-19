@@ -24,6 +24,13 @@ eos_token = tokenizer.eos_token
 pad_token = tokenizer.pad_token
 
 
+def format_sample_percent(sample_ratio: float) -> str:
+    percent = sample_ratio * 100
+    if percent >= 1:
+        return f"{percent:.0f}"
+    return f"{percent:.10f}".rstrip('0').rstrip('.')
+
+
 # ----------------------------------------- 数据集路径 -----------------------------------------
 # OpenCSG Fineweb-Edu-Chinese-V2.1 数据集 - pretrain / tokenizer
 # https://www.modelscope.cn/datasets/opencsg/Fineweb-Edu-Chinese-V2.1
@@ -215,6 +222,7 @@ def analyze_and_sample_fineweb_edu(data_path: str, output_path: str, sample_rati
         return
     
     print(f"Found {len(parquet_files)} parquet files")
+    sample_percent = format_sample_percent(sample_ratio)
         
     # 设置assets路径，用于保存原数据的 source 分布饼状图
     assets_path = Path(__file__).parent.parent / "assets"
@@ -328,7 +336,7 @@ def analyze_and_sample_fineweb_edu(data_path: str, output_path: str, sample_rati
                 # 保存当前批次为文件
                 file_count += 1
                 file_suffix = f"{file_count:03d}"
-                file_path = f"{output_path}/fineweb_edu_sampled_{int(sample_ratio*100)}_percent_{file_suffix}.parquet"
+                file_path = f"{output_path}/fineweb_edu_sampled_{sample_percent}_percent_{file_suffix}.parquet"
                 
                 batch_df = pd.concat(current_batch_data, ignore_index=True)
                 batch_df.to_parquet(file_path)
@@ -343,7 +351,7 @@ def analyze_and_sample_fineweb_edu(data_path: str, output_path: str, sample_rati
     if current_batch_data:
         file_count += 1
         file_suffix = f"{file_count:03d}"
-        file_path = f"{output_path}/fineweb_edu_sampled_{int(sample_ratio*100)}_percent_{file_suffix}.parquet"
+        file_path = f"{output_path}/fineweb_edu_sampled_{sample_percent}_percent_{file_suffix}.parquet"
         
         batch_df = pd.concat(current_batch_data, ignore_index=True)
         batch_df.to_parquet(file_path)
@@ -367,7 +375,7 @@ def analyze_and_sample_fineweb_edu(data_path: str, output_path: str, sample_rati
     
     # 创建饼状图
     plt.pie(counts, labels=sources, autopct='%1.1f%%', startangle=90)
-    plt.title(f'Source distribution of sampled data (sampling ratio: {sample_ratio*100}%)')
+    plt.title(f'Source distribution of sampled data (sampling ratio: {sample_percent}%)')
     plt.axis('equal')
     plt.tight_layout()
     chart_path = f"{output_path}/sampled_source_distribution.png"
@@ -381,20 +389,19 @@ def analyze_and_sample_fineweb_edu(data_path: str, output_path: str, sample_rati
 def merge_pretrain_data(
     merge_list: list,
     bin_path: str = str(processed_pretrain_data_path),
-    pretrain_data_path: str = str(pretrain_data_path)
+    output_file: str = str(pretrain_data_path / "pretrain_data.bin"),
     ):
     """
     合并多个预处理好的二进制文件为一个文件
-    
+
     Args:
         merge_list (list): 需要合并的文件名列表（不包含路径）
         bin_path (str): 二进制文件所在目录路径
-        pretrain_data_path (str): 合并后文件保存的目录路径
+        output_file (str): 合并后输出文件路径
     """
     print("Starting to merge pretrain data files...")
-    
-    # 输出文件路径
-    output_file = f"{pretrain_data_path}/pretrain_data.bin"
+
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     
     # 统计总token数
     total_tokens = 0
@@ -407,16 +414,16 @@ def merge_pretrain_data(
                 print(f"Warning: File {file_path} does not exist, skipping...")
                 continue
                 
-            # 读取二进制文件
+            chunk_size = 64 * 1024 * 1024  # 64MB
+            file_size = file_path.stat().st_size
+            total_tokens += file_size // 2
+
             with open(file_path, 'rb') as in_f:
-                # 读取整个文件内容
-                content = in_f.read()
-                # 写入到输出文件
-                out_f.write(content)
-                
-                # 计算token数量
-                token_count = len(content) // 2
-                total_tokens += token_count
+                while True:
+                    chunk = in_f.read(chunk_size)
+                    if not chunk:
+                        break
+                    out_f.write(chunk)
     
     print("-" * 30)
     print(f"Pretrain data merging completed!")
@@ -435,8 +442,9 @@ if __name__ == "__main__":
 
     # --------------------------------- 处理 pretrain 数据集 ---------------------------------
     # step 1. 按比例分层抽样 OpenCSG Fineweb-Edu-Chinese-V2.1 数据集
-    # sample_ratio = 0.2
-    # fineweb_edu_sampled_output_path = str(pretrain_data_path / f"fineweb_edu_sampled_{int(sample_ratio*100)}_percent")
+    # sample_ratio = 0.001  # 0.05 -> tokenizer; 0.2 -> pretrain; 0.001 -> YaRN
+    # sample_percent = format_sample_percent(sample_ratio)
+    # fineweb_edu_sampled_output_path = str(pretrain_data_path / f"fineweb_edu_sampled_{sample_percent}_percent")
     # analyze_and_sample_fineweb_edu(
     #     data_path=str(fineweb_edu_file_path), 
     #     output_path=str(fineweb_edu_sampled_output_path), 
@@ -447,7 +455,7 @@ if __name__ == "__main__":
     # 分词处理抽样后的 OpenCSG Fineweb-Edu-Chinese-V2.1 数据集
     # process_pretrain_fineweb_edu(
     #     data_path=str(fineweb_edu_sampled_output_path), 
-    #     bin_path=str(processed_pretrain_data_path / f"fineweb_edu_sampled_{int(sample_ratio*100)}_percent.bin")
+    #     bin_path=str(processed_pretrain_data_path / f"fineweb_edu_sampled_{sample_percent}_percent.bin")
     #     )
 
     # 分词处理原 OpenCSG Fineweb-Edu-Chinese-V2.1 数据集
@@ -461,4 +469,4 @@ if __name__ == "__main__":
     # ------------------------------------- 合并多个数据集 ------------------------------------
     # step 3. 如果想要训练多个不同的数据集，可以根据需要将他们拼接起来
     # 如果只有一个数据集需要训练,可以无需合并,直接在训练时传入该数据集路径即可
-    merge_pretrain_data(merge_list=["deepctrl.bin", "fineweb_edu.bin"])
+    merge_pretrain_data(merge_list=["deepctrl.bin", "grpo.bin"], output_file=str(pretrain_data_path / "midtrain_data.bin"))

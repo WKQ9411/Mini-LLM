@@ -1,6 +1,9 @@
 {%- if messages[0].role == 'system' %}
     {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
 {%- endif %}
+{%- if enable_think is not defined %}
+    {%- set enable_think = false %}
+{%- endif %}
 {%- for message in messages %}
     {%- if message.content is string %}
         {%- set content = message.content %}
@@ -31,4 +34,7 @@
 {%- endfor %}
 {%- if add_generation_prompt %}
     {{- '<|im_start|>assistant\n' }}
+    {%- if enable_think %}
+        {{- '<think>\n' }}
+    {%- endif %}
 {%- endif %}

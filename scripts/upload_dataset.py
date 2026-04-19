@@ -21,8 +21,8 @@ dataset_name = 'mini_llm_dataset'
 
 
 api.upload_file(
-    path_or_fileobj=str(data_path / "sft_data/sft_parquet.zip"),  # 本地的文件名
-    path_in_repo='./sft_parquet.zip',  # repo 的文件名
+    path_or_fileobj=str(data_path / "grpo_data/grpo_data.zip"),  # 本地的文件名
+    path_in_repo='./grpo_data.zip',  # repo 的文件名
     repo_id=f"{owner_name}/{dataset_name}",
     repo_type = 'dataset',
     commit_message='upload dataset file to repo',

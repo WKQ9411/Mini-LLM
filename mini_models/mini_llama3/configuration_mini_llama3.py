@@ -8,15 +8,16 @@ class MiniLlama3Config(PretrainedConfig):
     Attributes:
         vocab_size (int): 词典大小
         hidden_size (int): 隐藏层维度
-        intermediate_size (int): MLP中间维度
+        intermediate_size (int): MLP 中间维度
         num_hidden_layers (int): 模型层数
         num_attention_heads (int): 注意力头数
-        num_key_value_heads (int): key-value头数
+        num_key_value_heads (int): key-value 头数
         head_dim (int): 每个头的维度
-        rms_norm_eps (float): RMSNorm正则化系数
+        rms_norm_eps (float): RMSNorm 正则化系数
         attention_bias (bool): 是否使用注意力偏置
-        rope_theta (int): ROPE的底数
-        use_cache (bool): 是否使用KV Cache
+        rope_theta (int): ROPE 的底数
+        rope_scaling (dict): ROPE 缩放参数
+        use_cache (bool): 是否使用 KV Cache
         max_position_embeddings (int): 最大位置编码长度
     """
     model_type = "mini_llama3"
@@ -33,6 +34,7 @@ class MiniLlama3Config(PretrainedConfig):
         rms_norm_eps: float = 1e-6,
         attention_bias: bool = False,
         rope_theta: int = 10000.0,
+        rope_scaling: dict = None,
         use_cache: bool = True,
         max_position_embeddings: int = 512,
         **kwargs,
@@ -52,6 +54,7 @@ class MiniLlama3Config(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.attention_bias = attention_bias
         self.rope_theta = rope_theta
+        self.rope_scaling = rope_scaling
         self.use_cache = use_cache
         self.max_position_embeddings = max_position_embeddings
         # 父类初始化

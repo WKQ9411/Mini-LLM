@@ -17,6 +17,7 @@ class MiniQwen3NextConfig(PretrainedConfig):
         rms_norm_eps (float): RMSNorm 的 eps
         use_cache (bool): 是否使用缓存
         rope_theta (float): RoPE 的底, 默认为 10000.0
+        rope_scaling (dict): ROPE 缩放参数
         attention_bias (bool): 是否使用注意力偏置
         head_dim (int): 每个头的维度
         linear_conv_kernel_dim (int): 卷积核的维度
@@ -50,6 +51,7 @@ class MiniQwen3NextConfig(PretrainedConfig):
         rms_norm_eps: float | None = 1e-6,
         use_cache: bool | None = True,
         rope_theta: float = 10000.0,
+        rope_scaling: dict = None,
         attention_bias: bool | None = False,
         head_dim: int | None = 64,
         linear_conv_kernel_dim: int | None = 4,
@@ -82,6 +84,7 @@ class MiniQwen3NextConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.head_dim = head_dim
         self.rope_theta = rope_theta
+        self.rope_scaling = rope_scaling
 
         self.layer_types = layer_types
         if self.layer_types is None:

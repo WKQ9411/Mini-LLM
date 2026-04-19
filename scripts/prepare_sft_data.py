@@ -1,14 +1,13 @@
 from tqdm import tqdm
 from transformers import AutoTokenizer
-import numpy as np
 import json
-import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from pathlib import Path
 import re
 import random
 import os
 import matplotlib.pyplot as plt
-import jsonlines
 from collections import defaultdict
 
 
@@ -406,11 +405,14 @@ def merge_and_convert_to_parquet(
     jsonl_path: str = str(processed_sft_data_path), 
     parquet_path: str = str(parquet_sft_data_path),
     max_seq_len: int = 512,
-    ignore_index: int = -100
+    ignore_index: int = -100,
+    batch_size: int = 50000
     ):
     """
     合并多个 sft 数据集的 jsonl 文件并转换保存为 parquet 文件
     该 parquet 文件包括 token_ids, labels, position_ids, length, attention_mask, type 字段
+    
+    使用分批写入策略，减少内存占用: 每处理 batch_size 条数据后写入磁盘并释放内存
     
     Args:
         merge_list (list): 需要合并的文件名列表
@@ -418,6 +420,7 @@ def merge_and_convert_to_parquet(
         parquet_path (str): 合并并转换后 parquet 文件保存的目录路径
         max_seq_len (int): 最大序列长度, 默认为 512
         ignore_index (int): 用于 padding 的 ignore index, 默认为 -100
+        batch_size (int): 每批处理的样本数量, 默认为 50000, 处理完一批后写入磁盘并释放内存
     """
     print("Starting to merge SFT jsonl files and convert to parquet...")
     
@@ -454,8 +457,44 @@ def merge_and_convert_to_parquet(
     print(f"Total samples read: {len(all_data):,}")
     print("Processing samples and converting to parquet format...")
     
-    # 处理每条数据，生成所需字段
+    # 定义 parquet schema
+    schema = pa.schema([
+        ('token_ids', pa.list_(pa.int32())),
+        ('labels', pa.list_(pa.int32())),
+        ('position_ids', pa.list_(pa.int32())),
+        ('length', pa.int32()),
+        ('attention_mask', pa.list_(pa.int32())),
+        ('type', pa.string())
+    ])
+    
+    # 使用 ParquetWriter 进行增量写入
+    writer = None
     processed_data = []
+    total_samples = 0
+    batch_count = 0
+    
+    def write_batch(data_batch, writer, schema):
+        """将一批数据写入 parquet 文件"""
+        if not data_batch:
+            return writer
+        
+        # 转换为 PyArrow Table
+        table = pa.Table.from_pydict({
+            'token_ids': [d['token_ids'] for d in data_batch],
+            'labels': [d['labels'] for d in data_batch],
+            'position_ids': [d['position_ids'] for d in data_batch],
+            'length': [d['length'] for d in data_batch],
+            'attention_mask': [d['attention_mask'] for d in data_batch],
+            'type': [d['type'] for d in data_batch]
+        }, schema=schema)
+        
+        # 如果是第一批，创建 writer
+        if writer is None:
+            writer = pq.ParquetWriter(output_file, schema)
+        
+        # 写入数据
+        writer.write_table(table)
+        return writer
     
     for item in tqdm(all_data, desc="Processing samples"):
         messages = item['messages']
@@ -533,58 +572,92 @@ def merge_and_convert_to_parquet(
             "attention_mask": attention_mask,
             "type": data_type
         })
+        
+        # 达到 batch_size 时写入磁盘并清空内存
+        if len(processed_data) >= batch_size:
+            writer = write_batch(processed_data, writer, schema)
+            total_samples += len(processed_data)
+            batch_count += 1
+            processed_data = []  # 清空已处理的数据，释放内存
     
-    # 转换为 DataFrame 并保存为 parquet
-    df = pd.DataFrame(processed_data)
-    df.to_parquet(output_file, index=False)
+    # 写入剩余的数据
+    if processed_data:
+        writer = write_batch(processed_data, writer, schema)
+        total_samples += len(processed_data)
+        batch_count += 1
+    
+    # 关闭 writer
+    if writer is not None:
+        writer.close()
     
     print("-" * 30)
     print(f"SFT data merging and conversion completed!")
-    print(f"Total samples: {len(processed_data):,}")
+    print(f"Total samples: {total_samples:,}")
+    print(f"Total batches: {batch_count}")
     print(f"Output file: {output_file}")
     print(f"Output file size: {os.path.getsize(output_file) / (1024*1024):.2f} MB")
     print("-" * 30)
 
 
-def analyze_sft_data(parquet_data_path: str = str(parquet_sft_data_path / "sft_data.parquet"), interval: int = 50):
+def analyze_sft_data(
+    parquet_data_path: str = str(parquet_sft_data_path / "sft_data.parquet"),
+    interval: int = 50,
+    batch_size: int = 5000
+    ):
     """
     分析 parquet 文件数据的长短分布情况, 并保存为条形图
     
     Args:
         parquet_data_path (str): parquet 文件路径
         interval (int): 统计区间大小, 默认为 50
+        batch_size (int): 流式读取 parquet 时每批读取的行数, 默认为 5000
     """
     print(f"Analyzing SFT data length distribution: {parquet_data_path}")
-    
-    # 从 parquet 文件读取数据
-    print("Reading parquet file...")
-    df = pd.read_parquet(parquet_data_path)
-    
-    # 直接从 length 字段获取长度数据
-    if 'length' not in df.columns:
+    # 从 parquet 文件流式读取 length 列
+    print("Reading parquet file in streaming mode...")
+    parquet_file = pq.ParquetFile(parquet_data_path)
+    total_rows = parquet_file.metadata.num_rows if parquet_file.metadata is not None else None
+
+    if 'length' not in parquet_file.schema_arrow.names:
         raise ValueError("The parquet file does not contain a 'length' column")
-    
-    lengths = df['length'].tolist()
-    
-    # 计算统计信息
-    min_length = int(df['length'].min())
-    max_length = int(df['length'].max())
-    avg_length = float(df['length'].mean())
+
+    total_samples = 0
+    min_length = None
+    max_length = None
+    sum_length = 0
+    length_distribution = defaultdict(int)
+
+    progress_bar = tqdm(total=total_rows, desc="Analyzing length", unit="rows")
+    for batch in parquet_file.iter_batches(columns=['length'], batch_size=batch_size):
+        batch_lengths = batch.column(0).to_pylist()
+        for length in batch_lengths:
+            length = int(length)
+            total_samples += 1
+            sum_length += length
+
+            if min_length is None or length < min_length:
+                min_length = length
+            if max_length is None or length > max_length:
+                max_length = length
+
+            bin_index = length // interval
+            bin_start = bin_index * interval
+            bin_end = bin_start + interval - 1
+            bin_label = f"{bin_start}-{bin_end}"
+            length_distribution[bin_label] += 1
+
+        progress_bar.update(len(batch_lengths))
+    progress_bar.close()
+
+    if total_samples == 0:
+        raise ValueError("The parquet file is empty")
+
+    avg_length = float(sum_length / total_samples)
     
     print(f"Sequence Length Statistics:")
     print(f"  Minimum Length: {min_length}")
     print(f"  Maximum Length: {max_length}")
     print(f"  Average Length: {avg_length:.2f}")
-    
-    # 按区间统计
-    length_distribution = defaultdict(int)
-    for length in lengths:
-        # 计算所属区间
-        bin_index = length // interval
-        bin_start = bin_index * interval
-        bin_end = bin_start + interval - 1
-        bin_label = f"{bin_start}-{bin_end}"
-        length_distribution[bin_label] += 1
     
     # 按区间排序
     sorted_bins = sorted(length_distribution.items(), key=lambda x: int(x[0].split('-')[0]))
@@ -620,7 +693,7 @@ def analyze_sft_data(parquet_data_path: str = str(parquet_sft_data_path / "sft_d
     
     # 返回统计结果
     return {
-        "total_samples": len(lengths),
+        "total_samples": total_samples,
         "min_length": min_length,
         "max_length": max_length,
         "avg_length": avg_length,
@@ -631,7 +704,8 @@ def analyze_sft_data(parquet_data_path: str = str(parquet_sft_data_path / "sft_d
 def sample_from_sft_parquet(
     sft_parquet_path: str,
     sampled_sft_parquet_path: str,
-    sample_num: dict
+    sample_num: dict,
+    batch_size: int = 5000
     ):
     """
     从 sft_data.parquet 文件中按 type 字段进行抽样，生成 sampled_sft_data.parquet 文件
@@ -640,6 +714,12 @@ def sample_from_sft_parquet(
         sft_parquet_path (str): 输入的 parquet 文件路径
         sampled_sft_parquet_path (str): 输出的抽样后 parquet 文件路径
         sample_num (dict): 每个 type 需要抽样的数量，例如 {"single_turn": 40000, "multi_turn": 10000, "self_cognition": 200}
+        batch_size (int): 流式读取 parquet 时每批读取的行数, 默认为 5000
+
+    Note:
+        采用两遍流式处理提升效率：
+        1) 第一遍只读取 type 列，用水库抽样得到各 type 的目标全局行号
+        2) 第二遍读取全列，但只提取命中的行，避免把所有行都转为 Python dict
     """
     print("Starting to sample from SFT parquet file...")
     print(f"Input file: {sft_parquet_path}")
@@ -650,64 +730,128 @@ def sample_from_sft_parquet(
     output_path = Path(sampled_sft_parquet_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # 读取 parquet 文件
-    print("Reading parquet file...")
-    df = pd.read_parquet(sft_parquet_path)
-    
+    # 流式读取 parquet 文件，按 type 做水库抽样
+    print("Reading parquet file in streaming mode...")
+    parquet_file = pq.ParquetFile(sft_parquet_path)
+    total_rows = parquet_file.metadata.num_rows if parquet_file.metadata is not None else None
+
     # 检查是否有 type 字段
-    if 'type' not in df.columns:
+    if 'type' not in parquet_file.schema_arrow.names:
         raise ValueError("The parquet file does not contain a 'type' column")
-    
-    print(f"Total samples in input file: {len(df):,}")
-    
+
+    type_counts = defaultdict(int)
+    sampled_index_by_type = {type_name: [] for type_name in sample_num}
+
+    # 第一遍：只读 type 列，做每个 type 的水库抽样（保存全局行号）
+    print("Pass 1/2: scanning type column and building reservoirs...")
+    global_row_idx = 0
+    progress_bar = tqdm(total=total_rows, desc="Pass 1/2 Sampling index", unit="rows")
+    for batch in parquet_file.iter_batches(columns=['type'], batch_size=batch_size):
+        type_values = batch.column(0).to_pylist()
+
+        for local_idx, type_name in enumerate(type_values):
+            if type_name is None:
+                global_row_idx += 1
+                continue
+
+            type_counts[type_name] += 1
+
+            if type_name in sample_num:
+                target_num = sample_num[type_name]
+                if target_num > 0:
+                    bucket = sampled_index_by_type[type_name]
+                    seen_count = type_counts[type_name]
+                    current_global_idx = global_row_idx
+
+                    if len(bucket) < target_num:
+                        bucket.append(current_global_idx)
+                    else:
+                        replace_pos = random.randint(1, seen_count)
+                        if replace_pos <= target_num:
+                            bucket[replace_pos - 1] = current_global_idx
+
+            global_row_idx += 1
+
+        progress_bar.update(len(type_values))
+    progress_bar.close()
+
+    total_input_samples = sum(type_counts.values())
+    print(f"Total samples in input file: {total_input_samples:,}")
+
     # 统计每个 type 的数量
-    type_counts = df['type'].value_counts().to_dict()
+    type_counts = dict(type_counts)
     print("\nType distribution in input file:")
     for type_name, count in sorted(type_counts.items()):
         print(f"  {type_name}: {count:,}")
-    
-    # 按 type 进行抽样
-    sampled_dfs = []
-    
+
+    # 汇总各 type 抽样索引
+    sampled_indices = []
     for type_name, target_num in sample_num.items():
         if type_name not in type_counts:
             print(f"Warning: Type '{type_name}' not found in the data, skipping...")
             continue
-        
+
         available_count = type_counts[type_name]
-        
-        # 获取该 type 的所有数据
-        type_df = df[df['type'] == type_name].copy()
-        
+
         # 如果可用数量小于目标数量，使用全部数据
         if available_count <= target_num:
             print(f"  {type_name}: Using all {available_count:,} samples (requested: {target_num:,})")
-            sampled_dfs.append(type_df)
+            sampled_indices.extend(sampled_index_by_type[type_name])
         else:
-            # 随机抽样
-            sampled_type_df = type_df.sample(n=target_num, random_state=None)
             print(f"  {type_name}: Sampled {target_num:,} from {available_count:,} samples")
-            sampled_dfs.append(sampled_type_df)
-    
+            sampled_indices.extend(sampled_index_by_type[type_name])
+
+    # 第二遍：仅提取命中的行，避免全量 to_pylist
+    print("Pass 2/2: loading selected rows only...")
+    sampled_indices = sorted(sampled_indices)
+    sampled_rows = []
+    if sampled_indices:
+        target_ptr = 0
+        current_start_idx = 0
+        progress_bar = tqdm(total=total_rows, desc="Pass 2/2 Collect rows", unit="rows")
+
+        for batch in parquet_file.iter_batches(batch_size=batch_size):
+            rows_in_batch = batch.num_rows
+            batch_end_idx = current_start_idx + rows_in_batch
+
+            local_positions = []
+            while target_ptr < len(sampled_indices) and sampled_indices[target_ptr] < batch_end_idx:
+                local_positions.append(sampled_indices[target_ptr] - current_start_idx)
+                target_ptr += 1
+
+            if local_positions:
+                table = pa.Table.from_batches([batch])
+                selected_table = table.take(pa.array(local_positions, type=pa.int64()))
+                sampled_rows.extend(selected_table.to_pylist())
+
+            current_start_idx = batch_end_idx
+            progress_bar.update(rows_in_batch)
+
+            if target_ptr >= len(sampled_indices):
+                break
+
+        progress_bar.close()
+
     # 合并所有抽样结果
-    if not sampled_dfs:
+    if not sampled_rows:
         print("Error: No data sampled!")
         return
-    
-    sampled_df = pd.concat(sampled_dfs, ignore_index=True)
-    
+
     # 打乱顺序
-    sampled_df = sampled_df.sample(frac=1, random_state=None).reset_index(drop=True)
-    
+    random.shuffle(sampled_rows)
+
     # 保存到 parquet 文件
-    sampled_df.to_parquet(sampled_sft_parquet_path, index=False)
-    
+    sampled_table = pa.Table.from_pylist(sampled_rows)
+    pq.write_table(sampled_table, sampled_sft_parquet_path)
+
     # 统计抽样后的分布
-    sampled_type_counts = sampled_df['type'].value_counts().to_dict()
+    sampled_type_counts = defaultdict(int)
+    for row in sampled_rows:
+        sampled_type_counts[row.get('type', 'unknown')] += 1
     
     print("\n" + "-" * 30)
     print("Sampling completed!")
-    print(f"Total sampled samples: {len(sampled_df):,}")
+    print(f"Total sampled samples: {len(sampled_rows):,}")
     print(f"Output file: {sampled_sft_parquet_path}")
     print(f"Output file size: {os.path.getsize(sampled_sft_parquet_path) / (1024*1024):.2f} MB")
     print("\nSampled type distribution:")
@@ -720,10 +864,12 @@ def pack_sft_parquet(
     sft_parquet_path: str,
     packed_sft_parquet_path: str,
     max_seq_len: int = 512,
-    ignore_index: int = -100
+    ignore_index: int = -100,
+    chunk_size: int = 20000,
+    batch_size: int = 5000
     ):
     """
-    对 sft_data.parquet 文件进行 packing，将多个短序列打包到一个序列中，提高训练效率
+    对 sft_data.parquet 文件进行 packing, 将多个短序列打包到一个序列中, 提高训练效率
     
     采用 greedy packing 策略：
     1. 按长度从大到小排序
@@ -735,142 +881,177 @@ def pack_sft_parquet(
         packed_sft_parquet_path (str): 输出的 packing 后 parquet 文件路径
         max_seq_len (int): 最大序列长度, 默认为 512
         ignore_index (int): 用于 padding 的 ignore index, 默认为 -100
+        chunk_size (int): 分片 packing 的样本数, 默认为 20000
+        batch_size (int): 流式读取 parquet 时每批读取的行数, 默认为 5000
     """
     print("Starting to pack SFT parquet file...")
     print(f"Input file: {sft_parquet_path}")
     print(f"Output file: {packed_sft_parquet_path}")
     print(f"Max sequence length: {max_seq_len}")
+    print(f"Chunk size: {chunk_size}")
     
     # 确保输出目录存在
     output_path = Path(packed_sft_parquet_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # 读取 parquet 文件
-    print("Reading parquet file...")
-    df = pd.read_parquet(sft_parquet_path)
-    
+    # 读取 parquet 文件（流式）
+    print("Reading parquet file in streaming mode...")
+    parquet_file = pq.ParquetFile(sft_parquet_path)
+    total_rows = parquet_file.metadata.num_rows if parquet_file.metadata is not None else None
+
     # 检查必要的字段
     required_fields = ['token_ids', 'labels', 'length', 'type']
     for field in required_fields:
-        if field not in df.columns:
+        if field not in parquet_file.schema_arrow.names:
             raise ValueError(f"The parquet file does not contain a '{field}' column")
-    
-    print(f"Total samples in input file: {len(df):,}")
-    
-    # 1. 预处理所有数据，提取有效长度（去除 padding）
-    all_samples = []
-    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing samples"):
-        token_ids = row['token_ids']
-        labels = row['labels']
-        length = row['length']  # 使用 length 字段，这是 padding 前的实际长度
-        data_type = row['type']
-        
-        # 只取有效部分（去除 padding）
-        valid_token_ids = token_ids[:length]
-        valid_labels = labels[:length]
-        
-        # 如果单条数据超过 max_seq_len，则截断
-        if length > max_seq_len:
-            valid_token_ids = valid_token_ids[:max_seq_len]
-            valid_labels = valid_labels[:max_seq_len]
-            length = max_seq_len
-        
-        all_samples.append({
-            "token_ids": valid_token_ids,
-            "labels": valid_labels,
-            "length": length,
-            "type": data_type
-        })
-    
-    # 2. 按长度从大到小排序
-    all_samples.sort(key=lambda x: x['length'], reverse=True)
-    
-    # 3. 开始 greedy packing
-    print("Packing samples...")
-    bins = []  # 每个 bin 是一个字典，存储该 bin 当前的 list of samples 和 current_len
-    
-    for sample in tqdm(all_samples, desc="Packing"):
-        placed = False  # 当前样本是否已成功放入 bin
-        
-        # 尝试放入现有的 bin 中
-        for bin in bins:
-            if bin['current_len'] + sample['length'] <= max_seq_len:
-                bin['samples'].append(sample)
-                bin['current_len'] += sample['length']
-                placed = True
-                break
-        
-        # 如果所有 bin 都放不下，或者还没有 bin，创建一个新的
-        if not placed:
-            bins.append({
-                'samples': [sample],
-                'current_len': sample['length']
-            })
-    
-    print(f"Packed {len(all_samples):,} samples into {len(bins):,} bins")
-    print(f"Average samples per bin: {len(all_samples) / len(bins):.2f}")
-    
-    # 4. 将 bin 转换为最终格式
-    packed_data = []
+
+    output_schema = pa.schema([
+        ('token_ids', pa.list_(pa.int32())),
+        ('labels', pa.list_(pa.int32())),
+        ('position_ids', pa.list_(pa.int32())),
+        ('length', pa.int32()),
+        ('attention_mask', pa.list_(pa.int32())),
+        ('type', pa.string()),
+        ('num_samples', pa.int32()),
+        ('sample_lengths', pa.list_(pa.int32()))
+    ])
+
+    def pack_samples_with_greedy(samples):
+        """对一个分片内样本执行 greedy packing（按长度降序）"""
+        if not samples:
+            return []
+
+        samples.sort(key=lambda x: x['length'], reverse=True)
+        bins = []
+
+        for sample in samples:
+            placed = False
+            for bin_item in bins:
+                if bin_item['current_len'] + sample['length'] <= max_seq_len:
+                    bin_item['samples'].append(sample)
+                    bin_item['current_len'] += sample['length']
+                    placed = True
+                    break
+
+            if not placed:
+                bins.append({
+                    'samples': [sample],
+                    'current_len': sample['length']
+                })
+
+        return bins
+
+    writer = None
     total_pad_token = 0
-    
-    for bin in tqdm(bins, desc="Processing bins"):
-        # 拼接该 bin 内的所有样本
-        bin_token_ids = []
-        bin_labels = []
-        position_ids = []
-        bin_types = []  # 记录每个样本的 type
-        
-        for sample in bin['samples']:
-            bin_token_ids.extend(sample['token_ids'])
-            bin_labels.extend(sample['labels'])
-            bin_types.append(sample['type'])
-            # 生成每一段独立的 position ids (0, 1, 2...)
-            position_ids.extend(list(range(sample['length'])))
-        
-        # 如果不满 max_seq_len，则进行 padding
-        seq_len = len(bin_token_ids)
-        if seq_len < max_seq_len:
-            pad_len = max_seq_len - seq_len
-            total_pad_token += pad_len
-            bin_token_ids += [tokenizer.pad_token_id] * pad_len
-            bin_labels += [ignore_index] * pad_len
-            # position ids 对于 padding 部分可以随意，这里简单全0
-            position_ids += [0] * pad_len
-        
-        # attention_mask: 简单的 1D mask，1 表示有效位置，0 表示 padding
-        # 注意：2D 的斜对角块 mask 将在 dataset 中构建
-        attention_mask = [1] * seq_len + [0] * (max_seq_len - seq_len)
-        
-        # 保存每个样本的长度，用于后续在 dataset 中构建 2D attention mask
-        sample_lengths = [sample['length'] for sample in bin['samples']]
-        
-        # 对于 type，如果 bin 中有多个样本，可以保存主要类型或所有类型
-        # 这里保存主要类型（第一个样本的类型，或者可以统计最常见的类型）
-        main_type = bin_types[0] if bin_types else "unknown"
-        
-        packed_data.append({
-            "token_ids": bin_token_ids,
-            "labels": bin_labels,
-            "position_ids": position_ids,
-            "length": seq_len,
-            "attention_mask": attention_mask,
-            "type": main_type,
-            "num_samples": len(bin['samples']),  # 记录该 bin 包含的样本数量，用于统计
-            "sample_lengths": sample_lengths  # 记录每个样本的长度，用于构建 2D attention mask
-        })
-    
-    # 5. 转换为 DataFrame 并保存
-    packed_df = pd.DataFrame(packed_data)
-    packed_df.to_parquet(packed_sft_parquet_path, index=False)
-    
+    total_bins = 0
+    total_input_samples = 0
+    total_samples_in_bins = 0
+
+    def write_packed_chunk(samples_chunk, writer):
+        nonlocal total_pad_token, total_bins, total_samples_in_bins
+
+        bins = pack_samples_with_greedy(samples_chunk)
+        packed_rows = []
+
+        for bin_item in bins:
+            bin_token_ids = []
+            bin_labels = []
+            position_ids = []
+            bin_types = []
+
+            for sample in bin_item['samples']:
+                bin_token_ids.extend(sample['token_ids'])
+                bin_labels.extend(sample['labels'])
+                bin_types.append(sample['type'])
+                position_ids.extend(list(range(sample['length'])))
+
+            seq_len = len(bin_token_ids)
+            if seq_len < max_seq_len:
+                pad_len = max_seq_len - seq_len
+                total_pad_token += pad_len
+                bin_token_ids += [tokenizer.pad_token_id] * pad_len
+                bin_labels += [ignore_index] * pad_len
+                position_ids += [0] * pad_len
+
+            attention_mask = [1] * seq_len + [0] * (max_seq_len - seq_len)
+            sample_lengths = [sample['length'] for sample in bin_item['samples']]
+            main_type = bin_types[0] if bin_types else "unknown"
+
+            packed_rows.append({
+                "token_ids": bin_token_ids,
+                "labels": bin_labels,
+                "position_ids": position_ids,
+                "length": seq_len,
+                "attention_mask": attention_mask,
+                "type": main_type,
+                "num_samples": len(bin_item['samples']),
+                "sample_lengths": sample_lengths
+            })
+
+        if packed_rows:
+            packed_table = pa.Table.from_pylist(packed_rows, schema=output_schema)
+            if writer is None:
+                writer = pq.ParquetWriter(packed_sft_parquet_path, output_schema)
+            writer.write_table(packed_table)
+
+            total_bins += len(packed_rows)
+            total_samples_in_bins += sum(row['num_samples'] for row in packed_rows)
+
+        return writer
+
+    samples_buffer = []
+    progress_bar = tqdm(total=total_rows, desc="Reading and preprocessing", unit="rows")
+    for batch in parquet_file.iter_batches(columns=required_fields, batch_size=batch_size):
+        table = pa.Table.from_batches([batch])
+        rows = table.to_pylist()
+
+        for row in rows:
+            token_ids = row['token_ids']
+            labels = row['labels']
+            length = int(row['length'])
+            data_type = row['type']
+
+            valid_token_ids = token_ids[:length]
+            valid_labels = labels[:length]
+
+            if length > max_seq_len:
+                valid_token_ids = valid_token_ids[:max_seq_len]
+                valid_labels = valid_labels[:max_seq_len]
+                length = max_seq_len
+
+            samples_buffer.append({
+                "token_ids": valid_token_ids,
+                "labels": valid_labels,
+                "length": length,
+                "type": data_type
+            })
+            total_input_samples += 1
+
+            if len(samples_buffer) >= chunk_size:
+                writer = write_packed_chunk(samples_buffer, writer)
+                samples_buffer = []
+        progress_bar.update(len(rows))
+    progress_bar.close()
+
+    if samples_buffer:
+        writer = write_packed_chunk(samples_buffer, writer)
+
+    if writer is not None:
+        writer.close()
+
+    if total_bins == 0:
+        print("Error: No data packed!")
+        return
+
+    print(f"Packed {total_input_samples:,} samples into {total_bins:,} bins")
+
     # 统计信息
-    pad_ratio = total_pad_token / (len(packed_data) * max_seq_len)
-    avg_samples_per_bin = packed_df['num_samples'].mean()
+    pad_ratio = total_pad_token / (total_bins * max_seq_len)
+    avg_samples_per_bin = total_samples_in_bins / total_bins
     
     print("\n" + "-" * 30)
     print("Packing completed!")
-    print(f"Total bins: {len(packed_data):,}")
+    print(f"Total bins: {total_bins:,}")
     print(f"Average samples per bin: {avg_samples_per_bin:.2f}")
     print(f"Total padding tokens: {total_pad_token:,}")
     print(f"Padding ratio: {pad_ratio:.2%}")
@@ -885,37 +1066,39 @@ if __name__ == "__main__":
     print("=" * 30)
     print("Start processing sft datasets...")
     print("=" * 30)
+    max_seq_len = 2048
     
     # --------------------------------- 处理 sft 数据集 ---------------------------------
     # step 1. 处理 deepctrl 数据集
     # 默认筛选出所有符合条件的样本，保存为 jsonl 文件
-    # process_sft_deepctrl(data_path=str(deepctrl_file_path), jsonl_path=str(deepctrl_jsonl_path))
+    # process_sft_deepctrl(data_path=str(deepctrl_file_path), jsonl_path=str(deepctrl_jsonl_path), max_seq_len=max_seq_len)
 
     # step 2. 生成自我认知数据集
-    # process_self_cognition(jsonl_path=str(self_cognition_jsonl_path), model_name="Mini-LLM", owner="WKQ", num_samples=200)
+    # process_self_cognition(jsonl_path=str(self_cognition_jsonl_path), model_name="Mini-LLM", owner="WKQ", num_samples=300)
 
     # ------------------------------------- 合并多个数据集 ------------------------------------
     # step 3. 合并文件
     # 默认合并形成全部符合条件的样本，保存为 sft_data.parquet 文件，其中的样本已经过 tokenize 处理
     # 如果需调整 sft 训练量，仅需从 sft_data.parquet 文件中随机抽取样本即可
-    merge_and_convert_to_parquet(merge_list=["deepctrl.jsonl", "self_cognition.jsonl"])
+    # merge_and_convert_to_parquet(merge_list=["deepctrl.jsonl", "self_cognition.jsonl"], max_seq_len=max_seq_len)
 
     # ------------------------------------- 抽样函数 ------------------------------------
     # 可以选择从 sft_data.parquet 中按 type 进行抽样，形成 sampled_sft_data.parquet 文件
-    sample_from_sft_parquet(
-        sft_parquet_path=str(parquet_sft_data_path / "sft_data.parquet"), 
-        sampled_sft_parquet_path=str(parquet_sft_data_path / "sampled_sft_data.parquet"),
-        sample_num = {"single_turn": 40000, "multi_turn": 10000, "self_cognition": 200}
-        )
+    # sample_from_sft_parquet(
+    #     sft_parquet_path=str(parquet_sft_data_path / "sft_data.parquet"), 
+    #     sampled_sft_parquet_path=str(parquet_sft_data_path / "sampled_sft_data.parquet"),
+    #     sample_num = {"single_turn": 60000, "multi_turn": 20000, "self_cognition": 300}
+    #     )
 
     # ------------------------------------- packing 函数 ------------------------------------
     # 形成经过 packing 的 parquet 文件，采用分片 packing 策略提高效率
-    pack_sft_parquet(
-        sft_parquet_path=str(parquet_sft_data_path / "sampled_sft_data.parquet"),
-        packed_sft_parquet_path=str(parquet_sft_data_path / "packed_sft_data.parquet")
-        )
+    # pack_sft_parquet(
+    #     sft_parquet_path=str(parquet_sft_data_path / "sampled_sft_data.parquet"),
+    #     packed_sft_parquet_path=str(parquet_sft_data_path / "packed_sft_data.parquet"),
+    #     max_seq_len=max_seq_len,
+    #     )
     
     # ------------------------------------- 分析 sft 数据长度分布 ------------------------------------
     # 分析合并的、抽样的 sft 数据长度分布
-    analyze_sft_data(parquet_data_path=str(parquet_sft_data_path / "sft_data.parquet"), interval=50)
-    analyze_sft_data(parquet_data_path=str(parquet_sft_data_path / "sampled_sft_data.parquet"), interval=50)
+    analyze_sft_data(parquet_data_path=str(parquet_sft_data_path / "sft_data.parquet"), interval=200)
+    analyze_sft_data(parquet_data_path=str(parquet_sft_data_path / "sampled_sft_data.parquet"), interval=200)

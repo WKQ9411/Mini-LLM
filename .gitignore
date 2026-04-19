@@ -28,6 +28,14 @@ data/sft_data/*
 !data/sft_data/jsonl/self_cognition.jsonl
 !data/sft_data/sft_length_distribution.png
 
+# DPO data
+data/dpo_data/*
+!data/dpo_data/put_dpo_data_here
+
+# GRPO data
+data/grpo_data/*
+!data/grpo_data/put_grpo_data_here
+
 # output
 output/*
 

@@ -297,6 +297,7 @@ class MiniQwen3NextModel(MiniQwen3NextPreTrainedModel):
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.head_dim,
             rope_theta=config.rope_theta,
+            rope_scaling=config.rope_scaling,
         )
         
         # 调用父类方法，其中主要会进行：
