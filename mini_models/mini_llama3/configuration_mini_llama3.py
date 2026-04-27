@@ -36,6 +36,7 @@ class MiniLlama3Config(PretrainedConfig):
         rope_theta: int = 10000.0,
         rope_scaling: dict = None,
         use_cache: bool = True,
+        flash_attention: bool = False,
         max_position_embeddings: int = 512,
         **kwargs,
         ):
@@ -56,6 +57,7 @@ class MiniLlama3Config(PretrainedConfig):
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.use_cache = use_cache
+        self.flash_attention = flash_attention
         self.max_position_embeddings = max_position_embeddings
         # 父类初始化
         super().__init__(**kwargs)

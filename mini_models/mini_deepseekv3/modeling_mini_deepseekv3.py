@@ -282,6 +282,7 @@ class MiniDeepSeekV3DecoderLayer(nn.Module):
             v_head_dim=config.v_head_dim,
             attention_bias=config.attention_bias,
             attn_impl=config.attn_impl,
+            flash_attention=config.flash_attention,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 

@@ -1,7 +1,7 @@
 # Mini-LLM
 
 <p align="center">
-   <img src="./assets/logo.png" width="300"/>
+   <img src="./assets/logo.png" width="400"/>
 </p>
 
 <div align="center" style="line-height: 1;">
@@ -22,6 +22,7 @@
 
 # Changelog
 
+- [2026-04-27] Added Triton-based Flash Attention forward implementation.
 - [2026-04-19] Added YaRN, DPO, and GRPO.
 - [2026-02-01] Implemented `mini_qwen3_next` model; optimized multi-turn conversation data construction; optimized `mini_models` structure.
 - [2025-12-29] Refactored the project for transformers compatibility; implemented `mini_llama3` and `mini_deepseekv3` models; implemented pretrain and SFT.
@@ -350,6 +351,14 @@ Taking [CherryStudio](https://www.cherry-ai.com/) as an example, after configuri
 In addition, the model parameters of this project have been uploaded to HuggingFace and can be directly downloaded and used. Usage methods can be found in `example/use_example.ipynb`.
 
 > Due to the small model parameter size, while it may predict the next token relatively well to some extent, this does not mean it has good generalization ability, knowledge base, or reasoning ability. Small models are more likely to "remember" surface patterns in training data (such as specific phrases, sentence structures, formats) rather than truly "understand" their meaning. This causes them to easily produce hallucinations and incoherent outputs when facing prompts that require knowledge, reasoning, or slightly deviate from training patterns.
+
+Add the `--enable_flash_attention` flag to enable Triton-based Flash Attention forward inference. For the Flash Attention principle, see the blog: [Flash Attention](https://wkq9411.github.io/2026-04-27/Paper-FlashAttention.html). In `eval/eval_flash_attention.ipynb`, it is compared against a naive PyTorch attention implementation, with results shown below:
+
+<div align="center">
+<img src="./assets/flash_attention.png" width="50%" alt="flash_attention">
+</div>
+
+Since the inference demos in `example` only run short-sequence, single-batch generation, the perceived difference is usually small.
 
 # Star History
 

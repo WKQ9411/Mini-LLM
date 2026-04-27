@@ -5,6 +5,7 @@ from torch import nn
 
 from transformers.cache_utils import Cache
 from .utils import repeat_kv
+from .flash_attention_triton import flash_attention_forward, is_flash_attention_available
 from ..rope import apply_rotary_emb
 
 
@@ -33,6 +34,7 @@ class StandardAttention(nn.Module):
         num_key_value_heads: Optional[int] = None,
         head_dim: Optional[int] = None,
         attention_bias: bool = False,
+        flash_attention: bool = False,
     ):
         super().__init__()
         self.layer_idx = layer_idx
@@ -41,6 +43,7 @@ class StandardAttention(nn.Module):
         self.num_key_value_heads = num_attention_heads if num_key_value_heads is None else num_key_value_heads
         self.max_position_embeddings = max_position_embeddings
         self.head_dim = head_dim
+        self.flash_attention = flash_attention
 
         # 计算重复次数：每个 kv 头对应的 query 头数
         assert self.num_attention_heads % self.num_key_value_heads == 0, "num_attention_heads must be divisible by num_key_value_heads"
@@ -54,6 +57,25 @@ class StandardAttention(nn.Module):
 
         # 注意力缩放因子
         self.scaling = self.head_dim**-0.5
+
+    def _use_flash_attention(
+        self,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        cache_position: Optional[torch.LongTensor] = None,
+    ) -> bool:
+        q_len = query_states.shape[-2]
+        kv_len = key_states.shape[-2]
+        is_prefill = cache_position is None or int(cache_position.reshape(-1)[0].item()) == 0
+        return (
+            not self.training
+            and self.flash_attention
+            and query_states.is_cuda
+            and is_flash_attention_available()
+            and q_len > 1
+            and q_len == kv_len
+            and is_prefill
+        )
 
     def forward(
         self,
@@ -102,6 +124,19 @@ class StandardAttention(nn.Module):
         # 重复 key 和 value 以匹配 query 头数
         key_states = repeat_kv(key_states, self.num_key_value_groups)  # (batch_size, n_heads, k_len, head_dim)
         value_states = repeat_kv(value_states, self.num_key_value_groups)  # (batch_size, n_heads, k_len, head_dim)
+
+        if self._use_flash_attention(query_states, key_states, cache_position):
+            attn_output = flash_attention_forward(
+                query_states,
+                key_states,
+                value_states,
+                attention_mask=attention_mask,
+                scale=self.scaling,
+            )
+            attn_output = attn_output.transpose(1, 2).contiguous()
+            attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+            attn_output = self.o_proj(attn_output)
+            return attn_output, None
 
         # 计算缩放点积注意力
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scaling  # (batch_size, n_heads, q_len, k_len)

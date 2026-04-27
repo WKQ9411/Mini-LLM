@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument("--chat_mode", type=str, default="chat", choices=["chat", "generation"], help="Chat mode: 'chat' for chat model or 'generation' for pretrained model")
     parser.add_argument("--max_history_messages", type=int, default=5, help="Max history messages, only used in chat mode")
     parser.add_argument("--enable_think", action="store_true", help="Enable think-mode prompt prefix in chat mode")
+    parser.add_argument("--enable_flash_attention", action="store_true", help="Enable Triton flash attention for inference prefill")
     
     parser.add_argument("--max_new_tokens", type=int, default=512, help="Max new tokens")
     parser.add_argument("--temperature", type=float, default=1.0, help="Temperature")
@@ -32,13 +33,25 @@ def parse_args():
     return parser.parse_args()
 
 
+def _resolve_device_and_dtype():
+    if torch.cuda.is_available():
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        return torch.device("cuda"), dtype
+    return torch.device("cpu"), None
+
+
 def load_model(args):
     """加载模型和分词器"""
     tokenizer = AutoTokenizer.from_pretrained(str(root_path / "mini_tokenizer"))
 
     Model, Config = get_model_and_config(args.model_name)
-    model = Model.from_pretrained(args.weight_path)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device, dtype = _resolve_device_and_dtype()
+    load_kwargs = {"dtype": dtype} if dtype is not None else {}
+
+    config = Config.from_pretrained(args.weight_path)
+    config.flash_attention = args.enable_flash_attention
+
+    model = Model.from_pretrained(args.weight_path, config=config, **load_kwargs)
     model = model.to(device)
     model.eval()  # 设置为评估模式
 
@@ -179,6 +192,7 @@ def main():
     print(f"Generate function: {args.generate_func}")
     print(f"Chat mode: {args.chat_mode}")
     print(f"Enable think: {args.enable_think}")
+    print(f"Enable flash attention: {args.enable_flash_attention}")
     if args.chat_mode == "chat":
         print(f"Max history messages: {args.max_history_messages}")
 

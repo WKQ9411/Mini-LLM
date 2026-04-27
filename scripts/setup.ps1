@@ -372,12 +372,18 @@ function Sync-Environment {
         Write-Info "CUDA not available, using CPU version"
     }
     
+    $syncArgs = @("sync", "--extra", $extraToInstall)
+    if ($script:CUDA_AVAILABLE -and $extraToInstall -ne "cpu") {
+        $syncArgs += @("--extra", "flash-windows")
+        Write-Info "CUDA support selected, enabling flash attention dependencies"
+    }
+    
     Write-Info "Selected installation target: $extraToInstall"
     
     # 执行uv sync
-    Write-Running "Running: uv sync --extra $extraToInstall"
+    Write-Running "Running: uv $($syncArgs -join ' ')"
     try {
-        & uv sync --extra $extraToInstall
+        & uv @syncArgs
         if ($LASTEXITCODE -eq 0) {
             Write-Success "Environment synchronization completed with $extraToInstall support"
         } else {

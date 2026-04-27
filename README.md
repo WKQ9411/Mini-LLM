@@ -22,9 +22,10 @@
 
 # 更新日志
 
+- [2026-04-27] 增加 triton 实现的 Flash Attention 前向
 - [2026-04-19] 增加 YaRN、DPO、GRPO
 - [2026-02-01] 实现 `mini_qwen3_next` 模型；优化多轮对话数据构造；优化 `mini_models` 结构。
-- [2025-12-29] 完成兼容 transformers 的项目重构；实现 `mini_llama3`、`mini_deepseekv3` 模型；实现 pretrain、SFT。
+- [2025-12-29] 完成兼容 transformers 的项目重构；实现 `mini_llama3`、`mini_deepseekv3` 模型；实现 Pretrain、SFT。
 
 # 一、项目简介
 
@@ -349,9 +350,17 @@ python ./example/test_api.py --model_name=mini_deepseekv3
 <img src="./assets/example.gif" width="100%" alt="example">
 </div>
 
-此外，本项目的模型参数已上传至HuggingFace，可直接下载使用，调用方法见`example/use_example.ipynb`。
+此外，本项目的模型参数已上传至 HuggingFace，可直接下载使用，调用方法见`example/use_example.ipynb`。
 
 > 由于模型参数量较小，虽然可能一定程度上较好的预测下一个token，但是并不等同于它具备了良好的泛化能力、知识储备或推理能力。小模型更容易“记住”训练数据中的表面模式（比如特定短语、句子结构、格式），而不是真正“理解”其含义。这导致它们在面对需要知识、推理或稍微偏离训练模式的prompt时，容易产生幻觉和不连贯的输出。
+
+添加 `--enable_flash_attention` 参数后，可以启用 Triton 实现的 Flash Attention 前向推理，Flash Attention 原理可参考博客：[Flash Attention](https://wkq9411.github.io/2026-04-27/Paper-FlashAttention.html)。在 `eval/eval_flash_attention.ipynb` 中与 naive pytorch 实现的 attention 实现进行了对比，效果如下：
+
+<div align="center">
+<img src="./assets/flash_attention.png" width="50%" alt="flash_attention">
+</div>
+
+由于我们在 `example` 中的推理示例仅进行单 batch 的短序列推理，因此体感差异不大。
 
 # Star History
 

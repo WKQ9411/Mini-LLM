@@ -50,6 +50,7 @@ class MiniQwen3NextConfig(PretrainedConfig):
         initializer_range: float | None = 0.02,
         rms_norm_eps: float | None = 1e-6,
         use_cache: bool | None = True,
+        flash_attention: bool | None = False,
         rope_theta: float = 10000.0,
         rope_scaling: dict = None,
         attention_bias: bool | None = False,
@@ -81,6 +82,7 @@ class MiniQwen3NextConfig(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
+        self.flash_attention = flash_attention
         self.attention_bias = attention_bias
         self.head_dim = head_dim
         self.rope_theta = rope_theta

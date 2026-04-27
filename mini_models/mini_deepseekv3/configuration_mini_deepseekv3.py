@@ -47,6 +47,7 @@ class MiniDeepSeekV3Config(PretrainedConfig):
         num_dense_layers: int = 3,
         num_attention_heads: int = 12,
         attn_impl: str = "absorb",
+        flash_attention: bool = False,
         attention_bias: bool = False,
         max_position_embeddings: int = 512,
         rms_norm_eps: float = 1e-6,
@@ -84,6 +85,7 @@ class MiniDeepSeekV3Config(PretrainedConfig):
         self.num_dense_layers = num_dense_layers
         self.num_attention_heads = num_attention_heads
         self.attn_impl = attn_impl
+        self.flash_attention = flash_attention
         self.attention_bias = attention_bias
         self.max_position_embeddings = max_position_embeddings
         self.rms_norm_eps = rms_norm_eps

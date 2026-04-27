@@ -20,6 +20,7 @@ def parse_args():
 
     parser.add_argument("--generate_func", type=str, default="custom", choices=["custom", "transformers"], help="Generate function: 'custom' or 'transformers'")
     parser.add_argument("--enable_think", action="store_true", help="Enable think-mode prompt prefix for chat completions")
+    parser.add_argument("--enable_flash_attention", action="store_true", help="Enable Triton flash attention for inference prefill")
     parser.add_argument("--port", type=int, default=9411, help="Port to run the server on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to run the server on")
     parser.add_argument("--require-api-key", type=lambda x: x.lower() in ["true", "1", "yes"], default=True, help="Require API Key")
@@ -34,13 +35,25 @@ def parse_args():
     return parser.parse_args()
 
 
+def _resolve_device_and_dtype():
+    if torch.cuda.is_available():
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        return torch.device("cuda"), dtype
+    return torch.device("cpu"), None
+
+
 def load_model(args):
     """加载模型和分词器"""
     tokenizer = AutoTokenizer.from_pretrained(str(root_path / "mini_tokenizer"))
 
     Model, Config = get_model_and_config(args.model_name)
-    model = Model.from_pretrained(args.weight_path)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device, dtype = _resolve_device_and_dtype()
+    load_kwargs = {"dtype": dtype} if dtype is not None else {}
+
+    config = Config.from_pretrained(args.weight_path)
+    config.flash_attention = args.enable_flash_attention
+
+    model = Model.from_pretrained(args.weight_path, config=config, **load_kwargs)
     model = model.to(device)
     model.eval()  # 设置为评估模式
 
@@ -126,6 +139,7 @@ def main():
     print(f"Model info: {json.dumps(get_model_info(model)[1], indent=2)}")
     print(f"Generate function: {args.generate_func}")
     print(f"Enable think: {args.enable_think}")
+    print(f"Enable flash attention: {args.enable_flash_attention}")
 
     # 调用 wrap-openai 封装 openai 兼容 api
     register_kwargs = {

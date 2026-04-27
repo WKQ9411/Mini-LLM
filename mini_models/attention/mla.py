@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from transformers.cache_utils import Cache
+from .flash_attention_triton import flash_attention_forward, is_flash_attention_available
 from ..rope import apply_rotary_emb
 from ..base_module import RMSNorm
 
@@ -38,13 +39,15 @@ class MultiHeadLatentAttention(nn.Module):
         v_head_dim: int,
         num_key_value_heads: Optional[int] = None,
         attention_bias: bool = False,
-        attn_impl: str = "absorb"
+        attn_impl: str = "absorb",
+        flash_attention: bool = False,
     ):
         super().__init__()
         self.layer_idx = layer_idx
         self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
         self.attn_impl = attn_impl
+        self.flash_attention = flash_attention
         
         # DeepSeekV3 的 MLA 实现中，使用的均为 n_heads，因此以下逻辑实际暂时用不到
         self.num_key_value_heads = num_attention_heads if num_key_value_heads is None else num_key_value_heads
@@ -75,6 +78,25 @@ class MultiHeadLatentAttention(nn.Module):
 
         self.scaling = self.qk_head_dim ** -0.5  # 注意力缩放因子，即 1/sqrt(d_h + d_h^R)  
     
+    def _use_flash_attention(
+        self,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        cache_position: Optional[torch.LongTensor] = None,
+    ) -> bool:
+        q_len = query_states.shape[-2]
+        kv_len = key_states.shape[-2]
+        is_prefill = cache_position is None or int(cache_position.reshape(-1)[0].item()) == 0
+        return (
+            not self.training
+            and self.flash_attention
+            and query_states.is_cuda
+            and is_flash_attention_available()
+            and q_len > 1
+            and q_len == kv_len
+            and is_prefill
+        )
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -143,6 +165,19 @@ class MultiHeadLatentAttention(nn.Module):
             if past_key_values is not None:
                 cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
                 key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
+
+            if self._use_flash_attention(query_states, key_states, cache_position):  # 仅在 naive 中使用 flash attention
+                attn_output = flash_attention_forward(
+                    query_states,
+                    key_states,
+                    value_states,
+                    attention_mask=attention_mask,
+                    scale=self.scaling,
+                )
+                attn_output = attn_output.transpose(1, 2).contiguous()
+                attn_output = attn_output.reshape(batch_size, seq_length, -1).contiguous()
+                attn_output = self.wo(attn_output)
+                return attn_output, None
             
             # 计算缩放点积注意力，因为均采用 n_heads，因此无需 repeat_kv
             attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scaling  # (batch_size, n_heads, q_len, k_len)

@@ -185,6 +185,7 @@ class MiniQwen3NextDecoderLayer(nn.Module):
                 head_dim=config.head_dim,
                 attention_bias=config.attention_bias,
                 rms_norm_eps=config.rms_norm_eps,
+                flash_attention=config.flash_attention,
                 )
 
         # feedforward

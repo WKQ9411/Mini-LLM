@@ -42,6 +42,7 @@ class MiniLlama3DecoderLayer(nn.Module):
             num_key_value_heads=config.num_key_value_heads,
             head_dim=config.head_dim,
             attention_bias=config.attention_bias,
+            flash_attention=config.flash_attention,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 

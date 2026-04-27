@@ -39,6 +39,8 @@ cu124 = ["torch"]
 cu126 = ["torch"]
 cu128 = ["torch"]
 cu130 = ["torch"]
+flash-windows = ["triton-windows"]
+flash-linux = ["triton"]
 
 [tool.uv]
 conflicts = [

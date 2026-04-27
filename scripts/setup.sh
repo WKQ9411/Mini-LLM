@@ -260,11 +260,17 @@ sync_env() {
         print_info "CUDA not available, using CPU version"
     fi
     
+    SYNC_ARGS=(sync --extra "$EXTRA_TO_INSTALL")
+    if [ "$CUDA_AVAILABLE" = "true" ] && [ "$EXTRA_TO_INSTALL" != "cpu" ]; then
+        SYNC_ARGS+=(--extra flash-linux)
+        print_info "CUDA support selected, enabling flash attention dependencies"
+    fi
+    
     print_info "Selected installation target: $EXTRA_TO_INSTALL"
     
     # 执行uv sync
-    print_running "Running: uv sync --extra $EXTRA_TO_INSTALL"
-    if uv sync --extra "$EXTRA_TO_INSTALL"; then
+    print_running "Running: uv ${SYNC_ARGS[*]}"
+    if uv "${SYNC_ARGS[@]}"; then
         print_success "Environment synchronization completed with $EXTRA_TO_INSTALL support"
     else
         print_error "Environment synchronization failed"
