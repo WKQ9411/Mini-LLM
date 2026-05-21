@@ -19,8 +19,8 @@ class LayerNorm(nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.float32))
-        self.bias = nn.Parameter(torch.zeros(dim, dtype=torch.float32))
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.bias = nn.Parameter(torch.zeros(dim))
 
     def forward(self, x: torch.Tensor):
         """
@@ -32,7 +32,7 @@ class LayerNorm(nn.Module):
         Returns:
             torch.Tensor: 归一化后的输出
         """
-        return F.layer_norm(x.float(), (self.dim,), self.weight, self.bias, self.eps).type_as(x)
+        return F.layer_norm(x.float(), (self.dim,), self.weight.float(), self.bias.float(), self.eps).type_as(x)
 
 
 class RMSNorm(nn.Module):
@@ -48,7 +48,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.float32))
+        self.weight = nn.Parameter(torch.ones(dim))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -60,7 +60,7 @@ class RMSNorm(nn.Module):
         Returns:
             torch.Tensor: 归一化后的输出
         """
-        return F.rms_norm(x.float(), (self.dim,), self.weight, self.eps).type_as(x)
+        return F.rms_norm(x.float(), (self.dim,), self.weight.float(), self.eps).type_as(x)
 
 
 class ZeroCenteredRMSNorm(nn.Module):
@@ -125,7 +125,7 @@ class RMSNormGated(nn.Module):
         
         # Norm
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        hidden_states = self.weight * hidden_states.to(input_dtype)
+        hidden_states = self.weight.float() * hidden_states
         
         # Gate
         hidden_states = hidden_states * F.silu(gate.to(torch.float32))  # 使用 SiLU 激活函数作为门控机制

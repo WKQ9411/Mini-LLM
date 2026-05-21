@@ -38,9 +38,10 @@ def parse_args():
     # 模型与训练精度
     parser.add_argument("--model_name", type=str, required=True, help=f"Mini model names, support: {support_models}")
     parser.add_argument("--precision", type=str, default='bf16', help="Mixed precision training: default bf16, options are fp32 or fp16")
-    parser.add_argument("--base_model_path", type=str, default=f"{root_path}/output/pretrained_mini_deepseekv3", help="Base model checkpoint path")
+    parser.add_argument("--base_model_path", type=str, default=f"{root_path}/output/pretrained_mini_deepseekv4", help="Base model checkpoint path")
 
     # ModelArgs 设置
+    parser.add_argument("--max_seq_len", type=int, default=None, help="Maximum SFT sequence length. If set, only non-packed SFT parquet is supported; packed data must be regenerated for this length.")
     parser.add_argument("--max_batch_size", type=int, default=16, help="Training batch size")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
     parser.add_argument("--max_lr", type=float, default=3e-5, help="Maximum learning rate")
@@ -54,17 +55,30 @@ def parse_args():
     parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Maximum gradient norm for gradient clipping")
     
     # 路径与日志设置
-    parser.add_argument("--sft_data_path", type=str, default=f"{root_path}/data/sft_data/parquet/packed_sft_data.parquet", help="Path to sft dataset")
+    parser.add_argument("--sft_data_path", type=str, default=f"{root_path}/data/sft_data/parquet/sampled_sft_data.parquet", help="Path to sft dataset")
     parser.add_argument("--output_path", type=str, default="./output", help="Model output directory")
     parser.add_argument("--log_interval", type=int, default=50, help="Training log print interval")
 
     args = parser.parse_args()
+
+    # mini_qwen3_next / mini_deepseekv4 暂不支持 packed SFT data
+    packed_file_name = Path(args.sft_data_path).name
+    if args.model_name in ["mini_qwen3_next", "mini_deepseekv4"] and packed_file_name == "packed_sft_data.parquet":
+        raise ValueError(
+            f"Model '{args.model_name}' does not support packed SFT data yet. "
+            f"Please use the non-packed dataset: sampled_sft_data.parquet (current: {args.sft_data_path})."
+        )
 
     return args
 
 
 # -------------------------------------------【辅助函数】------------------------------------------- #
 def _resolve_max_seq_len(args) -> int:
+    if args.max_seq_len is not None:
+        max_seq_len = int(args.max_seq_len)
+        print(f"Using user-specified max_seq_len={max_seq_len}")
+        return max_seq_len
+
     training_args_files = sorted(Path(args.base_model_path).glob("*_training_args.json"))
     if training_args_files:
         training_args_path = str(training_args_files[0])
@@ -88,12 +102,14 @@ def train_process(args):
     device = torch.device("cuda")
 
     # 获取预训练模型的最大序列长度
+    manual_max_seq_len = args.max_seq_len is not None
     args.max_seq_len = _resolve_max_seq_len(args)
 
     # ------------------ 2. 数据准备 ------------------
     dataset = SFTDataset(
         file_path=args.sft_data_path,
         max_seq_len=args.max_seq_len,
+        manual_max_seq_len=manual_max_seq_len,
         )
     
     dataloader = DataLoader(
@@ -114,13 +130,20 @@ def train_process(args):
     print(f"Loading pretrained model weights from: {args.base_model_path}")
 
     # 特定模型配置调整
-    if args.model_name == 'mini_deepseekv3':
-        # 当前在 mini_deepseekv3 模型的实现中，router、seq_aux 暂未考虑 pad token，集中的 pad token 可能影响专家负载
+    if args.model_name in ['mini_deepseekv3', 'mini_deepseekv4']:
+        # 当前在 mini_deepseekv3/v4 模型的实现中，router、seq_aux 暂未考虑 pad token，集中的 pad token 可能影响专家负载
         # 这里简单的禁用 noaux_load_balance 和 seq_aux，并推荐使用 packing 模式的 sft 数据集减少 pad token 的影响
         # mtp 在预训练时已经引导主模型具备了一定的预测未来多个 token 的能力，这里为了简化直接禁用
+        if hasattr(model, 'remove_mtp_module') and getattr(model, 'mtp', None) is not None:
+            model.remove_mtp_module()
         model.config.use_mtp = False
         model.config.use_noaux_load_balance = False
         model.config.use_seq_aux = False
+        for module in model.modules():
+            if hasattr(module, 'use_noaux_load_balance'):
+                module.use_noaux_load_balance = False
+            if hasattr(module, 'use_seq_aux'):
+                module.use_seq_aux = False
 
     # 预热迭代次数
     if args.warmup_iters is None:

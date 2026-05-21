@@ -1,7 +1,7 @@
 # Mini-LLM
 
 <p align="center">
-   <img src="./assets/logo.png" width="400"/>
+  <img src="./assets/logo.png" width="300"/>
 </p>
 
 <div align="center" style="line-height: 1;">
@@ -22,6 +22,7 @@
 
 # Changelog
 
+- [2026-05-21] Implemented `mini_deepseekv4` model.
 - [2026-04-27] Added Triton-based Flash Attention forward implementation.
 - [2026-04-19] Added YaRN, DPO, and GRPO.
 - [2026-02-01] Implemented `mini_qwen3_next` model; optimized multi-turn conversation data construction; optimized `mini_models` structure.
@@ -36,6 +37,8 @@ This project aims to replicate mainstream open-source model architectures with l
 2. Implement common training and inference pipelines from scratch
 
 To achieve this goal, in previous versions of Mini-LLM, we fully customized the `model` package, including base classes such as `BaseModel` and `BaseModelArgs`. Later, we discovered that this approach is similar to transformers library's `PreTrainedModel` and `PretrainedConfig`. Based on this similarity, to better integrate with the HuggingFace ecosystem, we directly refactored the project structure. The current version's models are fully compatible with the transformers library and can directly use methods like `from_pretrained`, `generate` for model loading and inference. At the same time, to deeply understand the principles of training and inference, the project still provides a set of independent training code and generation code implementations. The early version of Mini-LLM has been moved to the legacy branch.
+
+> When this project was established, it was based on transformers 4.x. transformers is now in 5.x, and some function signatures have changed. Compatibility issues may still exist. The project will gradually migrate to transformers 5.x interfaces, while currently pinning to version 4.56.1 for compatibility.
 
 # II. How to Reproduce This Project from Scratch Step by Step
 
@@ -170,6 +173,8 @@ For model architecture, please refer to my [GitHub Blog](https://wkq9411.github.
    - [Paper Analysis - Transformers are RNNs](https://wkq9411.github.io/2026-01-18/Paper-Transformers-are-RNNs.html)
    - [Paper Analysis - Gated Delta Network](https://wkq9411.github.io/2026-01-18/Paper-Gated-Delta-Network.html)
    - [Paper Analysis - Gated Attention](https://wkq9411.github.io/2026-01-18/Paper-Gated-Attention.html)
+4. `mini_deepseekv4`, MoE Model:
+   - [Paper Analysis](https://wkq9411.github.io/2026-05-21/Paper-DeepSeek-V4.html)
 
 ## (V) Pre-training
 
@@ -239,6 +244,7 @@ After packing, the SFT curve is relatively smoother.
 </div>
 
 > Due to the characteristics of Linear Models, packing SFT for `mini_qwen3_next` is currently not supported. See [Issues #3](https://github.com/WKQ9411/Mini-LLM/issues/3).
+> In addition, due to the characteristics of the DeepSeek-V4 Compressor, packing data would require very complex logic to handle compression across different packed samples, so packing SFT is also currently not supported for `mini_deepseekv4`.
 
 ## (VII) YaRN
 

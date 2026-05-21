@@ -385,7 +385,7 @@ def train_process(local_rank, rank, world_size, args):
                     writer.add_scalar("Learning Rate", lr, it)
                     writer.add_scalar("Perplexity", ppl, it)
                     # 对特定模型额外记录序列级辅助损失、mtp 损失和负载情况等
-                    if args.model_name == 'mini_deepseekv3' or args.model_name == 'mini_qwen3_next':
+                    if args.model_name in ['mini_deepseekv3', 'mini_deepseekv4', 'mini_qwen3_next']:
                         if hasattr(outputs, 'total_seq_aux_loss') and outputs.total_seq_aux_loss:
                             writer.add_scalar('Training Loss/Seq Aux Loss', outputs.total_seq_aux_loss, it)
                         if hasattr(outputs, 'total_mtp_loss') and outputs.total_mtp_loss:
@@ -429,7 +429,7 @@ def train_process(local_rank, rank, world_size, args):
         model_to_save = model.module if hasattr(model, "module") else model
         
         # 训练完成后，删除 MTP 模块 (预训练中已经删除)
-        if args.model_name == 'mini_deepseekv3':
+        if args.model_name in ['mini_deepseekv3', 'mini_deepseekv4']:
             if hasattr(model_to_save, 'remove_mtp_module') and model_to_save.mtp is not None:
                 print("Removing MTP module before final save...")
                 model_to_save.remove_mtp_module()

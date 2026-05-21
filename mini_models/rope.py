@@ -139,8 +139,8 @@ def compute_yarn_parameters(
     dim = head_dim  # 默认全部维度使用 RoPE
     factor = rope_scaling["factor"]  # 扩展倍数，即扩展后上下文长度/扩展前上下文长度，即论文中的 s
     attention_factor = rope_scaling.get("attention_factor", None)  # 注意力缩放因子，即论文中的 √(1/t)，可以自定义，默认为 None，此时由 factor 计算得到
-    beta_fast = rope_scaling.get("beta_fast")  # 论文中的 β，用于划分高频部分，默认为 32
-    beta_slow = rope_scaling.get("beta_slow")  # 论文中的 α，用于划分低频部分，默认为 1
+    beta_fast = rope_scaling.get("beta_fast", 32)  # 论文中的 β，用于划分高频部分，默认为 32
+    beta_slow = rope_scaling.get("beta_slow", 1)  # 论文中的 α，用于划分低频部分，默认为 1
     original_max_position_embeddings = max_position_embeddings / factor  # 扩展前的最大位置编码长度
 
     # 计算注意力缩放因子
@@ -231,8 +231,12 @@ class RotaryEmbedding(nn.Module):
     def __init__(self, max_position_embeddings: int, head_dim: int, rope_theta: float = 10000.0, rope_scaling: dict = None):
         super().__init__()
 
-        # NOTE: 确定扩展类型，当前仅实现 YaRN 扩展，根据是否传入 rope_scaling 来确定是否使用 YaRN 扩展
-        if rope_scaling:
+        # # NOTE: transformers 5.x 可能会在配置中附加一个默认的 rope_scaling 字典，如 {"rope_type": "default"}
+        # 我们这里只有明确的 YaRN 配置才应该进入 YaRN 路径
+        rope_type = None
+        if isinstance(rope_scaling, dict):
+            rope_type = rope_scaling.get("rope_type") or rope_scaling.get("type")
+        if isinstance(rope_scaling, dict) and (rope_type == "yarn" or "factor" in rope_scaling):
             self.rope_type = "yarn"
         else:
             self.rope_type = "default"

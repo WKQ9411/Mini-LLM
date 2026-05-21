@@ -195,8 +195,8 @@ class MiniLlama3Model(MiniLlama3PreTrainedModel):
         # 即默认情况下是一个 2D 的 pad mask，形状为 (batch_size, number_of_seen_tokens + q_len)，通常就是 (batch_size, kv_len)
         # 如果已经是一个准备好的 4D mask，则直接原样返回，形状是 (batch_size, 1, q_len, kv_len)
         causal_mask = create_causal_mask(
-            config=self.config,
-            input_embeds=inputs_embeds,
+            self.config,
+            inputs_embeds,
             attention_mask=attention_mask,
             cache_position=cache_position,
             past_key_values=past_key_values,

@@ -6,6 +6,7 @@ wheels/
 *.egg-info
 .env
 mini_tokenizer_old/
+tests/
 
 # Virtual environments
 .venv
@@ -37,7 +38,10 @@ data/grpo_data/*
 !data/grpo_data/put_grpo_data_here
 
 # output
-output/*
+output/
 
 # api
 .api_keys/
+
+# scripts
+scripts/push_to_main.ps1

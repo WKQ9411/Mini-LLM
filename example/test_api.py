@@ -95,10 +95,16 @@ def generate(messages, model, tokenizer, max_new_tokens, temperature, top_p, top
             use_cache=True,
         )
 
-        # 如果模型是 mini_qwen3_next，手动初始化 MiniQwen3NextDynamicCache 以避免 transformers 默认初始化 DynamicCache 导致冲突
+        # 对使用自定义 cache 协议的模型，手动初始化 past_key_values，避免 transformers 默认 DynamicCache 导致冲突
         if args.model_name == "mini_qwen3_next":
             from mini_models.cache import MiniQwen3NextDynamicCache
             generation_kwargs["past_key_values"] = MiniQwen3NextDynamicCache(model.config)
+        elif args.model_name == "mini_deepseekv4":
+            from transformers.cache_utils import Cache
+            from mini_models.cache import MiniDeepSeekV4CacheLayer
+            generation_kwargs["past_key_values"] = Cache(
+                layers=[MiniDeepSeekV4CacheLayer(model.config) for _ in range(model.config.num_hidden_layers)]
+            )
         
         # 在单独线程中运行生成
         generation_thread = Thread(target=model.generate, kwargs=generation_kwargs)

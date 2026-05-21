@@ -93,7 +93,7 @@ class StandardAttention(nn.Module):
             hidden_states (torch.Tensor): (batch_size, seq_len, dim)
             position_embeddings (Optional[tuple[Tensor, Tensor]]): 预计算 (cos, sin) 表, 形状 (batch_size, seq_len, head_dim)
             attention_mask (Optional[torch.Tensor]): 通常为 (batch, 1, q_len, kv_len) 的加性掩码
-            past_key_values (Optional[Cache]): transformers 缓存对象, 此处仅做占位兼容
+            past_key_values (Optional[Cache]): transformers 缓存对象
             cache_position (Optional[LongTensor]): 当前位置索引 (q_len,) 或 (batch, q_len)
 
         Returns:

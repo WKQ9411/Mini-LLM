@@ -22,6 +22,7 @@
 
 # 更新日志
 
+- [2026-05-21] 实现 `mini_deepseekv4` 模型
 - [2026-04-27] 增加 triton 实现的 Flash Attention 前向
 - [2026-04-19] 增加 YaRN、DPO、GRPO
 - [2026-02-01] 实现 `mini_qwen3_next` 模型；优化多轮对话数据构造；优化 `mini_models` 结构。
@@ -36,6 +37,8 @@
 2. 从零实现常用的训练和推理流程
 
 为了实现这一目标，在先前版本的 Mini-LLM 中，我们完全自定义实现了 `model` 包，其中包括 `BaseModel` 和 `BaseModelArgs` 等基类。后来发现，这样的构建思路与 transformers 库的 `PreTrainedModel` 和 `PretrainedConfig` 类似。基于这种相似性，为了更好地与 HuggingFace 生态兼容，我们直接重构了项目结构。当前版本实现的模型完全兼容 transformers 库，可以直接使用 `from_pretrained`、`generate` 等方法进行模型加载和推理。同时，为了深入理解训练和推理原理，项目仍然提供了一套独立的训练代码和生成代码实现。早期版本的 Mini-LLM 已移动到 legacy 分支。
+
+> 本项目建立时，是基于 transformers 4.x 版本，当前 transformers 已处于 5.x 版本，transformers 中有一些函数签名变化了，尚不确定会不会存在兼容性问题，后续会逐渐过渡到 transformers 5.x 接口，目前固定到 4.56.1 版本保证兼容性。
 
 # 二、如何从零一步一步复现本项目
 
@@ -172,6 +175,8 @@ python ./train/train_tokenizer.py
    - [论文解读 - Transformers are RNNs](https://wkq9411.github.io/2026-01-18/Paper-Transformers-are-RNNs.html)
    - [论文解读 - Gated Delta Network](https://wkq9411.github.io/2026-01-18/Paper-Gated-Delta-Network.html)
    - [论文解读 - Gated Attention](https://wkq9411.github.io/2026-01-18/Paper-Gated-Attention.html)
+4. `mini_deepseekv4`，MoE Model:
+   - [论文解读](https://wkq9411.github.io/2026-05-21/Paper-DeepSeek-V4.html)
 
 ## （五）预训练
 
@@ -240,7 +245,8 @@ packing 后，SFT 曲线相对更加平滑。
 <img src="./assets/no_packing_sft.png" width="60%" alt="no_packing_sft">
 </div>
 
-> 由于 Linear Model 的特点，当前暂不支持 mini_qwen3_next 的 packing SFT，见[Issues #3](https://github.com/WKQ9411/Mini-LLM/issues/3)
+> 由于 Linear Model 的特点，当前暂不支持 mini_qwen3_next 的 packing SFT，见[Issues #3](https://github.com/WKQ9411/Mini-LLM/issues/3)。
+> 另外，由于 DeepSeek-V4 Compressor 的特性，packing 数据需要使用非常复杂的逻辑来处理不同 packed sample 之间的 compressing 情况，因此 mini_deepseekv4 目前同样不支持 packing SFT。
 
 ## （七）YaRN
 

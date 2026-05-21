@@ -469,4 +469,4 @@ if __name__ == "__main__":
     # ------------------------------------- 合并多个数据集 ------------------------------------
     # step 3. 如果想要训练多个不同的数据集，可以根据需要将他们拼接起来
     # 如果只有一个数据集需要训练,可以无需合并,直接在训练时传入该数据集路径即可
-    merge_pretrain_data(merge_list=["deepctrl.bin", "grpo.bin"], output_file=str(pretrain_data_path / "midtrain_data.bin"))
+    merge_pretrain_data(merge_list=["deepctrl.bin", "fineweb_edu_sampled_20_percent.bin"], output_file=str(pretrain_data_path / "pretrain_data.bin"))

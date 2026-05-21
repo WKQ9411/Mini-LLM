@@ -1,5 +1,8 @@
+from typing import Optional
 import torch
-from transformers.cache_utils import Cache
+from transformers.cache_utils import Cache, DynamicSlidingWindowLayer
+
+from mini_models.mini_deepseekv4.configuration_mini_deepseekv4 import MiniDeepSeekV4Config
 from .mini_qwen3_next.configuration_mini_qwen3_next import MiniQwen3NextConfig
 
 
@@ -147,3 +150,156 @@ class MiniQwen3NextDynamicCache:
     def has_previous_state(self):
         """如果最后一个线性注意力层的 conv_state 不为 None, 则表示存在 previous state"""
         return self.conv_states[self.last_linear_layer] is not None
+
+
+class MiniDeepSeekV4CacheLayer(DynamicSlidingWindowLayer):
+    """
+    MiniDeepSeekV4 的 CacheLayer, 统一 Sliding、CSA 和 HCA 的缓存管理
+    其中的 compressor 字段用于存储进行 core attention 计算的 kv entry, indexer 字段用于存储 indexer 内部 compressor 的 kv entry
+    """
+    def __init__(self, config: MiniDeepSeekV4Config):
+        super().__init__(sliding_window=config.window_size)
+        # buffer_kv 和 buffer_gate 用于累积当前窗口的 kv 和 gate，累积满 compress_ratio 后，会进行压缩
+        self.buffer_kv: dict[str, Optional[torch.Tensor]] = {"compressor": None, "indexer": None}
+        self.buffer_gate: dict[str, Optional[torch.Tensor]] = {"compressor": None, "indexer": None}
+        # CSA overlap 压缩需要上一完整块的 C_b/Z_b 参与下一个块的压缩
+        self.overlap_kv: dict[str, Optional[torch.Tensor]] = {"compressor": None, "indexer": None}
+        self.overlap_gate: dict[str, Optional[torch.Tensor]] = {"compressor": None, "indexer": None}
+        
+        # compressed_kv 用于存储经过压缩的 kv entries，compressed_valid 用于标记哪些 compressed kv entries 是有效的
+        self.compressed_kv: dict[str, Optional[torch.Tensor]] = {"compressor": None, "indexer": None}
+        self.compressed_valid: dict[str, Optional[torch.Tensor]] = {"compressor": None, "indexer": None}
+        self.entry_count: dict[str, int] = {"compressor": 0, "indexer": 0}
+    
+    def _cache_is_initialized(self) -> bool:
+        if hasattr(self, "is_initialized"):
+            return bool(self.is_initialized)
+        return self.keys is not None
+
+    def lazy_initialization(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor | None = None,
+    ) -> None:
+        self.dtype = key_states.dtype
+        self.device = key_states.device
+        self.keys = torch.tensor([], dtype=self.dtype, device=self.device)
+        self.values = self.keys
+        self.is_initialized = True
+
+    def update(self, key_states: torch.Tensor, value_states: torch.Tensor, *args, **kwargs):
+        if not self._cache_is_initialized():
+            self.lazy_initialization(key_states, value_states)
+
+        # key_states 的形状为 (batch_size, num_heads, seq_len, head_dim)
+        self.cumulative_length += key_states.shape[-2]
+        # 首次 prefill 时会返回完整的 cache，并只缓存 window-1 个 token (如果小于则会全部保存)，后续计算每次拼接新一个 token
+        full = torch.cat([self.keys, key_states], dim=-2)
+        self.keys = full[:, :, -self.sliding_window + 1 :, :]
+        self.values = self.keys
+        return full, full
+    
+    def update_compressor_buffer(
+        self,
+        name: str,
+        compress_ratio: int,
+        kv: torch.Tensor,
+        gate: torch.Tensor,
+        overlap: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.LongTensor, torch.BoolTensor]:
+        """
+        不考虑 pad 的缓冲区更新, 兼容 CSA 和 HCA
+
+        Args:
+            kv/gate: (batch_size, seq_len, coff * head_dim) 当前窗口的 kv 和 gate
+            overlap: 是否为 CSA 的 overlap 压缩
+
+        Returns:
+            flat_kv/flat_gate: (batch_size, usable, coff * head_dim)
+            block_positions: (batch_size, n_blocks)
+            block_valid: (batch_size, n_blocks), overlap=True 时首个 False 可表示仅用于提供上一块上下文
+        """
+        batch_size = kv.shape[0]
+        buffered_kv = self.buffer_kv[name]
+        buffered_gate = self.buffer_gate[name]
+        context_kv = self.overlap_kv[name] if overlap else None
+        context_gate = self.overlap_gate[name] if overlap else None
+
+        if buffered_kv is not None and buffered_kv.shape[1] > 0:
+            kv = torch.cat([buffered_kv, kv], dim=1)
+            gate = torch.cat([buffered_gate, gate], dim=1)
+
+        usable = (kv.shape[1] // compress_ratio) * compress_ratio
+        n_blocks = usable // compress_ratio
+        first_block_position = self.entry_count[name] * compress_ratio
+        # 更新 buffer
+        self.buffer_kv[name] = kv[:, usable:]
+        self.buffer_gate[name] = gate[:, usable:]
+
+        # 没有新的完整块可用时，返回空的 block_positions 和 block_valid
+        if n_blocks == 0:
+            block_positions = torch.empty(batch_size, 0, dtype=torch.long, device=kv.device)
+            block_valid = torch.empty(batch_size, 0, dtype=torch.bool, device=kv.device)
+            return kv[:, :usable], gate[:, :usable], block_positions, block_valid
+
+        new_kv = kv[:, :usable]
+        new_gate = gate[:, :usable]
+
+        # 如果是 CSA，则需要保留最后一个 block，以便下一个块的压缩使用
+        if overlap:
+            self.overlap_kv[name] = new_kv[:, -compress_ratio:]
+            self.overlap_gate[name] = new_gate[:, -compress_ratio:]
+
+        # 如果是 CSA 且存在上一个历史重叠窗口，则将其与当前块拼接以提供上下文信息，否则直接使用当前块
+        if overlap and context_kv is not None and context_kv.shape[1] > 0:
+            flat_kv = torch.cat([context_kv, new_kv], dim=1)
+            flat_gate = torch.cat([context_gate, new_gate], dim=1)
+            positions = torch.arange(
+                first_block_position - compress_ratio,
+                first_block_position + usable,
+                compress_ratio,
+                dtype=torch.long,
+                device=kv.device,
+            )
+            # 由于当前仅实现无 pad 逻辑，因此 block_valid 全 True
+            block_valid = torch.ones(batch_size, n_blocks + 1, dtype=torch.bool, device=kv.device)  # (batch_size, n_blocks + 1)
+            block_valid[:, 0] = False  # 首个 block_valid 为 False 表示该块仅用于提供上下文信息，不应该被写入 compressed cache
+        else:
+            flat_kv = new_kv
+            flat_gate = new_gate
+            positions = torch.arange(
+                first_block_position,
+                first_block_position + usable,
+                compress_ratio,
+                dtype=torch.long,
+                device=kv.device,
+            )
+            # 由于当前仅实现无 pad 逻辑，因此 block_valid 全 True
+            block_valid = torch.ones(batch_size, n_blocks, dtype=torch.bool, device=kv.device)  # (batch_size, n_blocks)
+
+        block_positions = positions.unsqueeze(0).expand(batch_size, -1)
+        return flat_kv, flat_gate, block_positions, block_valid
+    
+    def update_compressor_states(
+        self,
+        name: str,
+        compressed: torch.Tensor,
+        block_valid: Optional[torch.BoolTensor] = None,
+    ) -> tuple[torch.Tensor, torch.BoolTensor]:
+        """
+        加入新的 compressed kv entry 并返回当前所有的 compressed kv entry 和对应的有效性掩码
+        """
+        batch_size, n_new, head_dim = compressed.shape
+        if block_valid is None:
+            block_valid = torch.ones(batch_size, n_new, dtype=torch.bool, device=compressed.device)
+
+        if self.compressed_kv[name] is None:
+            self.compressed_kv[name] = compressed
+            self.compressed_valid[name] = block_valid
+        elif n_new > 0:
+            self.compressed_kv[name] = torch.cat([self.compressed_kv[name], compressed], dim=1)
+            self.compressed_valid[name] = torch.cat([self.compressed_valid[name], block_valid], dim=1)
+
+        self.entry_count[name] += n_new
+
+        return self.compressed_kv[name], self.compressed_valid[name]

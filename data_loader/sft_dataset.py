@@ -23,11 +23,13 @@ class SFTDataset(Dataset):
         max_seq_len (int): 最大序列长度
         ignore_index (int): 用于 padding 的 ignore index, 默认为 -100
     """
-    def __init__(self, file_path: str, max_seq_len: int, ignore_index: int = -100):
+    def __init__(self, file_path: str, max_seq_len: int, ignore_index: int = -100, manual_max_seq_len: bool = False):
         super().__init__()
 
         self.max_seq_len = max_seq_len
         self.ignore_index = ignore_index
+        self.manual_max_seq_len = manual_max_seq_len
+        self.skipped_too_long = 0
         self.file_size_bytes = os.path.getsize(file_path)
         self.file_size = format_size(self.file_size_bytes)
         self.file_path = file_path
@@ -41,6 +43,12 @@ class SFTDataset(Dataset):
         self.packing = is_packed
         
         if is_packed:
+            if self.manual_max_seq_len:
+                raise ValueError(
+                    "Manual max_seq_len is only supported for non-packed SFT parquet. "
+                    "This file is already packed for a fixed sequence length; please repack "
+                    "the source non-packed parquet with the requested max_seq_len."
+                )
             print("Detected packed parquet file (with packing)")
             self.data, self.total_pad_token = self._load_from_packed_parquet(df)
         else:
@@ -52,8 +60,10 @@ class SFTDataset(Dataset):
             "file size": self.file_size,
             "packing": self.packing,
             "num samples": len(self.data),
-            "pad ratio": f"{self.total_pad_token / (len(self.data) * self.max_seq_len):.2%}"
+            "pad ratio": f"{self.total_pad_token / (len(self.data) * self.max_seq_len):.2%}" if self.data else "N/A",
         }
+        if self.skipped_too_long > 0:
+            info["skipped too long"] = self.skipped_too_long
 
         # 直接打印，默认 sft 使用单卡
         print("-------------- sft dataset info --------------")
@@ -79,6 +89,10 @@ class SFTDataset(Dataset):
             position_ids = row['position_ids']
             length = row['length']
             attention_mask_1d = row.get('attention_mask', None)
+
+            if length > self.max_seq_len:
+                self.skipped_too_long += 1
+                continue
             
             # 如果 parquet 中没有 attention_mask，则根据 length 构建
             if attention_mask_1d is None:
@@ -89,10 +103,10 @@ class SFTDataset(Dataset):
             total_pad_token += pad_len
             
             data.append({
-                "input_ids": torch.tensor(token_ids, dtype=torch.long),
-                "labels": torch.tensor(labels, dtype=torch.long),
-                "position_ids": torch.tensor(position_ids, dtype=torch.long),
-                "attention_mask": torch.tensor(attention_mask_1d, dtype=torch.long)  # (seq_len,) transformers 内部会自动构建 causal mask
+                "input_ids": torch.tensor(token_ids[:self.max_seq_len], dtype=torch.long),
+                "labels": torch.tensor(labels[:self.max_seq_len], dtype=torch.long),
+                "position_ids": torch.tensor(position_ids[:self.max_seq_len], dtype=torch.long),
+                "attention_mask": torch.tensor(attention_mask_1d[:self.max_seq_len], dtype=torch.long)  # (seq_len,) transformers 内部会自动构建 causal mask
             })
         
         return data, total_pad_token

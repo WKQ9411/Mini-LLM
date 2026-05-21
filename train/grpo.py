@@ -126,7 +126,7 @@ def _resolve_max_seq_len(args) -> int:
 
 # 特定模型参数调整
 def _adjust_model_for_grpo(model, model_name: str) -> None:
-    if model_name == "mini_deepseekv3":
+    if model_name in ["mini_deepseekv3", "mini_deepseekv4"]:
         model.config.use_mtp = False
         model.config.use_noaux_load_balance = False
         model.config.use_seq_aux = False
