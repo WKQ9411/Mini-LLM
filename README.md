@@ -22,6 +22,7 @@
 
 # 更新日志
 
+- [2026-06-13] 新增架构实验，提供一个可交互的环境用于快速测试不同架构设计的预训练 loss
 - [2026-05-21] 实现 `mini_deepseekv4` 模型
 - [2026-04-27] 增加 triton 实现的 Flash Attention 前向
 - [2026-04-19] 增加 YaRN、DPO、GRPO
@@ -132,6 +133,7 @@ bash ./scripts/download_data.sh
 
 - [10] 【DPO】下载经过处理的DPO数据集
 - [11] 【GRPO】下载合成的GRPO数据集
+- [12] 【Architecture Lab】架构实验室数专用数据集，从 OpenCSG Fineweb-Edu-Chinese-V2.1数据集中采样 1% 并预处理。
 
 你可以选择直接下载处理好的数据进行训练（推荐），也可以选择下载原始数据自行处理，处理数据的代码位于：
 
@@ -141,6 +143,7 @@ bash ./scripts/download_data.sh
 ./scripts/prepare_sft_data.py
 ./scripts/prepare_dpo_data.py
 ./scripts/prepare_grpo_data.py
+./scripts/prepare_architecture_lab_data.py
 ```
 
 本项目当前使用：[1] 训练 tokenizer，[4]+[6] 进行预训练（通过`prepare_pretrain_data.py`中的`merge_pretrain_data`函数合并.bin文件），[9]中的(c)进行 SFT。
@@ -367,6 +370,24 @@ python ./example/test_api.py --model_name=mini_deepseekv3
 </div>
 
 由于我们在 `example` 中的推理示例仅进行单 batch 的短序列推理，因此体感差异不大。
+
+# 三、架构实验室
+
+需确保安装 Node.js，建议 20 及以上版本，并执行 `scripts` 中的 `setup`，然后使用如下命令启动：
+
+```shell
+# Linux
+bash ./architecture_lab/start.sh
+
+# Windows
+.\architecture_lab\start.ps1
+```
+
+为快速进行架构实验，相比 `mini_tokenizer`，专门设置了 `vocab_size=10003` 的更小的 tokenizer，以减小 `embedding` 和 `lm_head` 的参数量。如果需要调整可以在 `scripts/prepare_architecture_lab_data.py` 中调整这一设置（需重新训练 tokenizer）。另外需确保使用 `scripts` 中的 `download_data` 脚本下载架构实验室专用数据集，脚本会自动下载数据至默认路径。
+
+在架构实验室中，可以自由组合当前已实现的主要模块，构建自己的模型架构并进行预训练 loss 测试：
+
+https://github.com/user-attachments/assets/919d3b61-0664-4f0b-ae33-e9565f57155c
 
 # Star History
 

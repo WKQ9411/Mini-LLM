@@ -6,7 +6,7 @@ from torch import nn
 from transformers.cache_utils import Cache
 from .flash_attention_triton import flash_attention_forward, is_flash_attention_available
 from ..rope import apply_rotary_emb
-from ..base_module import RMSNorm
+from ..norm import RMSNorm
 
 
 class MultiHeadLatentAttention(nn.Module):

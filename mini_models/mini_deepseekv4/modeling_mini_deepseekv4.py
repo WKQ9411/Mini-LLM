@@ -13,7 +13,7 @@ from transformers.generation import GenerationMixin
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 
 from ..attention import DeepSeekV4Attention
-from ..base_module import RMSNorm
+from ..norm import RMSNorm
 from ..cache import MiniDeepSeekV4CacheLayer
 from ..rope import RotaryEmbedding
 from .configuration_mini_deepseekv4 import MiniDeepSeekV4Config

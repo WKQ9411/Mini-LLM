@@ -2738,6 +2738,7 @@ source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "dotenv" },
+    { name = "fastapi" },
     { name = "fastparquet" },
     { name = "ipykernel" },
     { name = "json-repair" },
@@ -2745,6 +2746,8 @@ dependencies = [
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "modelscope" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version < '3.11' or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu118') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu121') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu121') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu126' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu126' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu128' and extra == 'extra-8-mini-llm-cu130')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version >= '3.11' or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu118') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu121') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu121') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu126' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu126' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu128' and extra == 'extra-8-mini-llm-cu130')" },
     { name = "openai" },
     { name = "opencc-python-reimplemented" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }, marker = "python_full_version < '3.11' or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu118') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu121') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cpu' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu121') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu118' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu124') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu121' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu126') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu124' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu126' and extra == 'extra-8-mini-llm-cu128') or (extra == 'extra-8-mini-llm-cu126' and extra == 'extra-8-mini-llm-cu130') or (extra == 'extra-8-mini-llm-cu128' and extra == 'extra-8-mini-llm-cu130')" },
@@ -2756,6 +2759,8 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
     { name = "transformers" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
     { name = "wrap-openai" },
 ]
 
@@ -2797,6 +2802,7 @@ flash-windows = [
 requires-dist = [
     { name = "datasets", specifier = ">=4.1.1" },
     { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "fastapi" },
     { name = "fastparquet", specifier = ">=2024.11.0" },
     { name = "ipykernel", specifier = ">=6.30.1" },
     { name = "json-repair" },
@@ -2804,6 +2810,7 @@ requires-dist = [
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "modelscope", specifier = ">=1.30.0" },
+    { name = "numpy" },
     { name = "openai" },
     { name = "opencc-python-reimplemented" },
     { name = "pandas", specifier = ">=2.3.2" },
@@ -2823,6 +2830,8 @@ requires-dist = [
     { name = "transformers", specifier = "==4.56.1" },
     { name = "triton", marker = "extra == 'flash-linux'" },
     { name = "triton-windows", marker = "extra == 'flash-windows'" },
+    { name = "uvicorn", extras = ["standard"] },
+    { name = "websockets" },
     { name = "wrap-openai" },
 ]
 provides-extras = ["cpu", "cu118", "cu121", "cu124", "cu126", "cu128", "cu130", "flash-windows", "flash-linux"]

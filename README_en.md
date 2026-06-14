@@ -22,6 +22,7 @@
 
 # Changelog
 
+- [2026-06-13] Added the Architecture Lab, an interactive environment for quickly testing the pre-training loss of different architecture designs.
 - [2026-05-21] Implemented `mini_deepseekv4` model.
 - [2026-04-27] Added Triton-based Flash Attention forward implementation.
 - [2026-04-19] Added YaRN, DPO, and GRPO.
@@ -131,6 +132,7 @@ Among them:
 
 - [10] [DPO] Download the processed DPO dataset
 - [11] [GRPO] Download the synthesized GRPO dataset
+- [12] [Architecture Lab] A dedicated dataset for the architecture lab, sampled at 1% from the OpenCSG Fineweb-Edu-Chinese-V2.1 dataset and preprocessed.
 
 You can choose to directly download processed data for training (recommended), or download raw data and process it yourself. Data processing code is located at:
 
@@ -140,6 +142,7 @@ You can choose to directly download processed data for training (recommended), o
 ./scripts/prepare_sft_data.py
 ./scripts/prepare_dpo_data.py
 ./scripts/prepare_grpo_data.py
+./scripts/prepare_architecture_lab_data.py
 ```
 
 This project currently uses: [1] for training tokenizer, [4]+[6] for pre-training (merge .bin files through the `merge_pretrain_data` function in `prepare_pretrain_data.py`), and (c) from [9] for SFT.
@@ -365,6 +368,24 @@ Add the `--enable_flash_attention` flag to enable Triton-based Flash Attention f
 </div>
 
 Since the inference demos in `example` only run short-sequence, single-batch generation, the perceived difference is usually small.
+
+# III. Architecture Lab
+
+Make sure Node.js is installed (version 20 or above is recommended), run the `setup` script in `scripts`, and then start it using the following command:
+
+```shell
+# Linux
+bash ./architecture_lab/start.sh
+
+# Windows
+.\architecture_lab\start.ps1
+```
+
+For fast architecture experiments, a smaller tokenizer with `vocab_size=10003` is specifically set up compared to `mini_tokenizer`, to reduce the parameter count of `embedding` and `lm_head`. If you need to adjust this setting, you can modify it in `scripts/prepare_architecture_lab_data.py` (requires retraining the tokenizer). Additionally, ensure that the `download_data` script in `scripts` is used to download the dataset dedicated to the architecture lab; the script will automatically download the data to the default path.
+
+In the architecture lab, you can freely combine the currently implemented main modules to build your own model architecture and test the pre-training loss:
+
+https://github.com/user-attachments/assets/919d3b61-0664-4f0b-ae33-e9565f57155c
 
 # Star History
 

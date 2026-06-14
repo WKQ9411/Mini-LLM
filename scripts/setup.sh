@@ -37,6 +37,7 @@ LIGHT_BULB_MARK="💡"
 BOOK_MARK="📚"
 LINK_MARK="🔗"
 SUCCESS_MARK="🎉"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # 输出函数定义
 print_phase() {
@@ -278,6 +279,42 @@ sync_env() {
     fi
 }
 
+# 安装并构建 architecture_lab 前端
+setup_frontend() {
+    local frontend_path="${1:-$PROJECT_ROOT/architecture_lab/frontend}"
+    local node_command_name="${2:-node}"
+    local npm_command_name="${3:-npm}"
+    local package_json_path="$frontend_path/package.json"
+
+    if [ ! -f "$package_json_path" ]; then
+        print_warning "Frontend project not found at '$frontend_path', skipping frontend setup."
+        return
+    fi
+
+    if ! command -v "$node_command_name" &> /dev/null || ! command -v "$npm_command_name" &> /dev/null; then
+        print_warning "Node.js or npm is unavailable, skipping frontend dependency installation and build."
+        return
+    fi
+
+    print_running "Installing frontend dependencies in '$frontend_path'..."
+    pushd "$frontend_path" > /dev/null
+    if ! "$npm_command_name" install; then
+        popd > /dev/null
+        print_error "Frontend setup failed: npm install failed"
+        exit 1
+    fi
+
+    print_running "Building frontend project..."
+    if ! "$npm_command_name" run build; then
+        popd > /dev/null
+        print_error "Frontend setup failed: npm run build failed"
+        exit 1
+    fi
+
+    popd > /dev/null
+    print_success "Frontend dependencies installed and build completed"
+}
+
 # 主函数
 main() {
 
@@ -317,6 +354,7 @@ main() {
     
     # 4. 额外配置
     print_phase "4. Additional Configuration..."
+    setup_frontend
 
     # 配置结束
     echo ""

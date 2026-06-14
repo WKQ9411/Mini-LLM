@@ -1,4 +1,4 @@
-from prepare_pretrain_data import analyze_and_sample_fineweb_edu
+from prepare_pretrain_data import analyze_and_sample_fineweb_edu, format_sample_percent
 from pathlib import Path
 
 
@@ -22,7 +22,8 @@ if __name__ == "__main__":
 
     # --------------------------------- 处理 tokenizer 数据集 ---------------------------------
     sample_ratio = 0.05
-    fineweb_edu_sampled_output_path = str(tokenizer_data_path / f"fineweb_edu_sampled_{int(sample_ratio*100)}_percent")
+    sample_percent = format_sample_percent(sample_ratio)
+    fineweb_edu_sampled_output_path = str(tokenizer_data_path / f"fineweb_edu_sampled_{sample_percent}_percent")
     analyze_and_sample_fineweb_edu(
         data_path=str(fineweb_edu_file_path), 
         output_path=str(fineweb_edu_sampled_output_path), 

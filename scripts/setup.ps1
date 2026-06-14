@@ -77,6 +77,7 @@ $script:DETECTED_GPU_COUNT = 0
 $script:GPU_DETAILS = @()
 $script:UV_AVAILABLE = $false
 $script:DETECTED_UV_VERSION = ""
+$script:PROJECT_ROOT = try { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path } catch { (Get-Location).Path }
 
 # 展示系统信息
 function Show-DetectionSummary {
@@ -396,6 +397,50 @@ function Sync-Environment {
     }
 }
 
+# 安装并构建 architecture_lab 前端
+function Setup-Frontend {
+    param(
+        [string]$FrontendPath = (Join-Path $script:PROJECT_ROOT "architecture_lab/frontend"),
+        [string]$NodeCommandName = "node",
+        [string]$NpmCommandName = "npm"
+    )
+
+    $packageJsonPath = Join-Path $FrontendPath "package.json"
+    if (-not (Test-Path $packageJsonPath)) {
+        Write-Warning "Frontend project not found at '$FrontendPath', skipping frontend setup."
+        return
+    }
+
+    $nodeCommand = Get-Command $NodeCommandName -ErrorAction SilentlyContinue
+    $npmCommand = Get-Command $NpmCommandName -ErrorAction SilentlyContinue
+    if (-not $nodeCommand -or -not $npmCommand) {
+        Write-Warning "Node.js or npm is unavailable, skipping frontend dependency installation and build."
+        return
+    }
+
+    Write-Running "Installing frontend dependencies in '$FrontendPath'..."
+    Push-Location $FrontendPath
+    try {
+        & $NpmCommandName install
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm install failed with exit code $LASTEXITCODE"
+        }
+
+        Write-Running "Building frontend project..."
+        & $NpmCommandName run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm run build failed with exit code $LASTEXITCODE"
+        }
+
+        Write-Success "Frontend dependencies installed and build completed"
+    } catch {
+        Write-Error "Frontend setup failed: $_"
+        exit 1
+    } finally {
+        Pop-Location
+    }
+}
+
 # 主函数
 function Main {
     Write-Host ""
@@ -433,7 +478,7 @@ function Main {
     
     # 4. 额外配置
     Write-Phase "4. Additional Configuration..."
-    # 在这里添加项目特定的配置
+    Setup-Frontend
     
     # 配置结束
     Write-Host ""

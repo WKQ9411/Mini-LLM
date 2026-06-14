@@ -10,7 +10,8 @@ from transformers.modeling_outputs import (
 from transformers import PreTrainedModel
 from transformers.generation import GenerationMixin
 
-from ..base_module import RMSNorm, SwiGLUFFN
+from ..norm import RMSNorm
+from ..ffn import SwiGLUFFN
 from ..attention import StandardAttention
 from ..rope import RotaryEmbedding
 from .configuration_mini_llama3 import MiniLlama3Config

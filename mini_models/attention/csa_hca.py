@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from transformers.cache_utils import Cache
 from ..rope import apply_rotary_emb, RotaryEmbedding
-from ..base_module import RMSNorm
+from ..norm import RMSNorm
 from ..cache import MiniDeepSeekV4CacheLayer
 
 

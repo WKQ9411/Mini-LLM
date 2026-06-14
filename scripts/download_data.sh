@@ -8,6 +8,7 @@ SFT_DATA_PATH="$ROOT_PATH/data/sft_data"
 DPO_DATA_PATH="$ROOT_PATH/data/dpo_data"
 GRPO_DATA_PATH="$ROOT_PATH/data/grpo_data"
 TOKENIZER_DATA_PATH="$ROOT_PATH/data/tokenizer_data"
+ARCHITECTURE_LAB_DATA_PATH="$ROOT_PATH/architecture_lab/data"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -195,6 +196,32 @@ download_pretrain_deepctrl_tokenized() {
         cleanup_temp_files "$download_dir"
         
         echo -e "${GREEN}wangkunqing/mini_llm_dataset dataset download completed.${NC}"
+        return 0
+    else
+        echo -e "${RED}Error: Download command failed with exit code $?${NC}"
+        return 1
+    fi
+}
+
+
+# ========== Architecture Lab Data Functions ==========
+
+# 下载 Architecture Lab 训练数据
+download_architecture_lab_train() {
+    echo -e "${GREEN}Downloading wangkunqing/mini_llm_dataset dataset (Architecture Lab train.bin)...${NC}"
+    local download_dir="$ARCHITECTURE_LAB_DATA_PATH"
+
+    mkdir -p "$download_dir"
+
+    modelscope download \
+        --dataset 'wangkunqing/mini_llm_dataset' \
+        --include 'train.bin' \
+        --local_dir "$download_dir"
+
+    if [ $? -eq 0 ]; then
+        cleanup_temp_files "$download_dir"
+
+        echo -e "${GREEN}wangkunqing/mini_llm_dataset Architecture Lab dataset download completed.${NC}"
         return 0
     else
         echo -e "${RED}Error: Download command failed with exit code $?${NC}"
@@ -401,6 +428,7 @@ declare -a DATASETS=(
     "9|【SFT】: Parquet Dataset|Download processed parquet SFT dataset (~3.7 GB for SFT)|download_sft_parquet"
     "10|【DPO】: DPO Dataset|Download processed DPO dataset (~160 MB for DPO)|download_dpo_data"
     "11|【GRPO】: GRPO Dataset|Download processed GRPO dataset (~3 MB for GRPO)|download_grpo_data"
+    "12|【Architecture Lab】: Train Dataset|Download architecture lab train dataset (~605 MB for training)|download_architecture_lab_train"
 )
 
 

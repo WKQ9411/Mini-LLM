@@ -12,7 +12,8 @@ from transformers.modeling_outputs import (
 from transformers import PreTrainedModel
 from transformers.generation import GenerationMixin
 
-from ..base_module import ZeroCenteredRMSNorm, SwiGLUFFN
+from ..norm import ZeroCenteredRMSNorm
+from ..ffn import SwiGLUFFN
 from ..attention import GatedDeltaNet, GatedAttention
 from ..rope import RotaryEmbedding
 from ..cache import MiniQwen3NextDynamicCache

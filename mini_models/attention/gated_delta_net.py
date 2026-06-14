@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from ..cache import MiniQwen3NextDynamicCache
-from ..base_module import RMSNormGated
+from ..norm import RMSNormGated
 
 
 def apply_mask_to_padding_states(hidden_states: torch.Tensor, attention_mask: torch.Tensor | None) -> torch.Tensor:

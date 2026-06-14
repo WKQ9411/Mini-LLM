@@ -29,6 +29,10 @@ dependencies = [
     "json-repair",
     "dotenv>=0.9.9",
     "wrap-openai",
+    "numpy",
+    "fastapi",
+    "uvicorn[standard]",
+    "websockets",
 ]
 
 [project.optional-dependencies]

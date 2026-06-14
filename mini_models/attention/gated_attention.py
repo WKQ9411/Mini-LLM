@@ -9,7 +9,7 @@ from .utils import repeat_kv
 from .flash_attention_triton import flash_attention_forward, is_flash_attention_available
 from ..rope import apply_rotary_emb
 from ..cache import MiniQwen3NextDynamicCache
-from ..base_module import ZeroCenteredRMSNorm
+from ..norm import ZeroCenteredRMSNorm
 
 
 class GatedAttention(nn.Module):

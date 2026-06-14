@@ -8,6 +8,7 @@ $SFT_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "sft_data"
 $DPO_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "dpo_data"
 $GRPO_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "grpo_data"
 $TOKENIZER_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "data") "tokenizer_data"
+$ARCHITECTURE_LAB_DATA_PATH = Join-Path (Join-Path $ROOT_PATH "architecture_lab") "data"
 
 # 清理临时文件的通用函数
 function Cleanup-TempFiles {
@@ -212,6 +213,36 @@ function Download-PretrainDeepctrlTokenized {
             Cleanup-TempFiles -Dir $downloadDir
             
             Write-Host "wangkunqing/mini_llm_dataset dataset download completed." -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+
+# ========== Architecture Lab Data Functions ==========
+
+# 下载 Architecture Lab 训练数据
+function Download-ArchitectureLabTrain {
+    Write-Host "Downloading wangkunqing/mini_llm_dataset dataset (Architecture Lab train.bin)..." -ForegroundColor Green
+    $downloadDir = $ARCHITECTURE_LAB_DATA_PATH
+
+    if (-not (Test-Path -PathType Container $downloadDir)) {
+        New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+    }
+
+    try {
+        & modelscope download --dataset 'wangkunqing/mini_llm_dataset' --include 'train.bin' --local_dir $downloadDir
+
+        if ($LASTEXITCODE -eq 0) {
+            Cleanup-TempFiles -Dir $downloadDir
+
+            Write-Host "wangkunqing/mini_llm_dataset Architecture Lab dataset download completed." -ForegroundColor Green
             return $true
         } else {
             Write-Host "Error: Download command failed with exit code $LASTEXITCODE" -ForegroundColor Red
@@ -520,6 +551,12 @@ $Datasets = @(
         Name = "【GRPO】: GRPO Dataset"
         Description = "Download processed GRPO dataset (~3 MB for GRPO)"
         Function = { Download-GrpoData }
+    },
+    @{
+        Id = "12"
+        Name = "【Architecture Lab】: Train Dataset"
+        Description = "Download architecture lab train dataset (~605 MB for training)"
+        Function = { Download-ArchitectureLabTrain }
     }
 )
 

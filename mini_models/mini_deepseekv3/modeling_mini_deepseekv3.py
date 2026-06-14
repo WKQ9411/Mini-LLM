@@ -14,7 +14,8 @@ from transformers.modeling_outputs import (
 from transformers import PreTrainedModel
 from transformers.generation import GenerationMixin
 
-from ..base_module import RMSNorm, SwiGLUFFN
+from ..norm import RMSNorm
+from ..ffn import SwiGLUFFN
 from ..attention import MultiHeadLatentAttention
 from ..rope import RotaryEmbedding
 from .configuration_mini_deepseekv3 import MiniDeepSeekV3Config

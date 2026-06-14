@@ -7,6 +7,7 @@ wheels/
 .env
 mini_tokenizer_old/
 tests/
+docs/
 
 # Virtual environments
 .venv
@@ -45,3 +46,9 @@ output/
 
 # scripts
 scripts/push_to_main.ps1
+
+# architecture_lab frontend
+architecture_lab/frontend/node_modules/
+
+# architecture_lab runtime data
+architecture_lab/data/
