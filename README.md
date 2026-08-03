@@ -22,6 +22,7 @@
 
 # 更新日志
 
+- [2026-08-03] 兼容 transformers 5.x 版本；新增 `mini_inference`，用于实现 paged attention 和 continuous batching 等机制
 - [2026-06-13] 新增架构实验，提供一个可交互的环境用于快速测试不同架构设计的预训练 loss
 - [2026-05-21] 实现 `mini_deepseekv4` 模型
 - [2026-04-27] 增加 triton 实现的 Flash Attention 前向
@@ -38,8 +39,6 @@
 2. 从零实现常用的训练和推理流程
 
 为了实现这一目标，在先前版本的 Mini-LLM 中，我们完全自定义实现了 `model` 包，其中包括 `BaseModel` 和 `BaseModelArgs` 等基类。后来发现，这样的构建思路与 transformers 库的 `PreTrainedModel` 和 `PretrainedConfig` 类似。基于这种相似性，为了更好地与 HuggingFace 生态兼容，我们直接重构了项目结构。当前版本实现的模型完全兼容 transformers 库，可以直接使用 `from_pretrained`、`generate` 等方法进行模型加载和推理。同时，为了深入理解训练和推理原理，项目仍然提供了一套独立的训练代码和生成代码实现。早期版本的 Mini-LLM 已移动到 legacy 分支。
-
-> 本项目建立时，是基于 transformers 4.x 版本，当前 transformers 已处于 5.x 版本，transformers 中有一些函数签名变化了，尚不确定会不会存在兼容性问题，后续会逐渐过渡到 transformers 5.x 接口，目前固定到 4.56.1 版本保证兼容性。
 
 # 二、如何从零一步一步复现本项目
 
@@ -63,6 +62,12 @@ bash ./scripts/setup.sh
 # Windows
 .\scripts\setup.ps1
 ```
+
+`setup` 是交互式配置脚本，选项 1 用于安装主环境，会自动检测 CUDA 版本并安装对应的 PyTorch、transformers、triton 等依赖，如果是 windows 系统，则会安装 `triton-windows`。选项 2 用于安装架构实验室前端依赖。选项 3 用于安装 `flash-attn`，仅在 `eval/eval_inference_throughput.ipynb` 用到，安装时会搜索预编译 wheel，如果没有找到，则会尝试从源码编译安装，对于 windows 系统，不保证编译稳定，推荐优先使用 Linux/WSL。
+
+<div align="center">
+<img src="./assets/setup.png" width="50%" alt="setup script">
+</div>
 
 ## （二）数据集准备
 
@@ -255,11 +260,12 @@ packing 后，SFT 曲线相对更加平滑。
 
 关于 YaRN 的理论部分，可以参考博客：[YaRN 论文解读](https://wkq9411.github.io/2026-01-01/Paper-YaRN.html)
 
-在模型配置中传入 `rope_scaling` 参数，例如：
+在模型配置中传入 Transformers 5.x 格式的 `rope_parameters` 参数，例如：
 
 ```python
-rope_scaling = {
+rope_parameters = {
    "rope_type": "yarn",
+   "rope_theta": 10000.0,
    "factor": 4.0,
    "attention_factor": None,  # 默认为 None，内部自动计算
    "beta_fast": 32,
@@ -337,41 +343,68 @@ python ./train/grpo.py --model_name mini_llama3 --max_batch_size 4 --cold_start_
 
 ## （十）推理
 
-相关推理 demo 的代码位于`example`文件夹中，可以使用项目自定义的`Generator`类进行推理，也可以使用 transformers 原生的`generate`方法进行推理。
-
-在终端中运行：
+相关推理 demo 的代码位于`example`文件夹中，包括以下文件：
 
 ```shell
-python ./example/test_terminal.py --model_name=mini_deepseekv3
+example/test_api.py  # 封装为 OpenAI 兼容 API，可供聊天应用调用
+example/test_terminal.py  # 在终端中选择自定义 Generator、原生 generate 或 mini_inference 进行推理
 ```
 
-更多推理参数说明，请参考`example/test_terminal.py`中的`parse_args()`函数。
+1. 通过 API 方式推理
 
-也可以通过 API 方式进行推理，提供给流行的前端进行对话（通过`wrap-openai`封装 OpenAI 兼容 API，可参考我的另一个仓库[wrap-openai](https://github.com/WKQ9411/wrap-openai)），通过如下命令启动后端：
+为当前流行的对话应用提供 OpenAI 兼容 API 来进行对话。首先使用如下命令生成和查看已有 API KEY：
+
+```shell
+wrap-openai --generate --name "my_key"
+wrap-openai --list
+```
+
+`wrap-openai` 是本项目的依赖包，能够将 generate 函数封装为 OpenAI 兼容接口，更多使用方法可参考我的另一个仓库 [wrap-openai](https://github.com/WKQ9411/wrap-openai)。然后通过如下命令启动服务：
 
 ```shell
 python ./example/test_api.py --model_name=mini_deepseekv3
 ```
 
-以[CherryStudio](https://www.cherry-ai.com/)为例，配置好OpenAI兼容API后，对话效果如下：
+以 [CherryStudio](https://www.cherry-ai.com/) 为例，配置好 OpenAI 兼容 API，填写 model id，即 `--model_name` 传入的模型名，对话效果如下：
+
+https://github.com/user-attachments/assets/f9a703ef-07a5-4d6c-a680-c9c1f707d8a5
+
+1. 在终端中运行推理
+
+```shell
+# 默认使用自定义 Generator
+python ./example/test_terminal.py --model_name=mini_deepseekv3
+
+# 使用原生 generate
+python ./example/test_terminal.py --model_name=mini_deepseekv3 --generate_func=transformers
+
+# 使用 mini_inference（当前仅支持 mini_llama3）
+python ./example/test_terminal.py --model_name=mini_llama3 --generate_func=mini_inference
+```
+
+更多推理参数说明，请参考`example/test_terminal.py`中的`parse_args()`函数。
+
+本项目 `mini_inference` 基于 [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm) 实现，支持 paged attention、continuous batching 等机制，能够在一定程度上提升推理吞吐和降低延迟，在保留原有功能的基础上，兼容了自训练的模型，并使用 `Triton` 进行了内核实现。性能测试效果如下：
 
 <div align="center">
-<img src="./assets/example.gif" width="100%" alt="example">
+<img src="./assets/batch_1_test_1.png" width="70%" alt="batch_1_test_1">
 </div>
+
+<div align="center">
+<img src="./assets/batch_1_test_2.png" width="70%" alt="batch_1_test_2">
+</div>
+
+<div align="center">
+<img src="./assets/continuous_batching_test.png" width="70%" alt="continuous_batching_test">
+</div>
+
+更多细节请参考 `eval/eval_inference_throughput.ipynb`。
 
 此外，本项目的模型参数已上传至 HuggingFace，可直接下载使用，调用方法见`example/use_example.ipynb`。
 
 > 由于模型参数量较小，虽然可能一定程度上较好的预测下一个token，但是并不等同于它具备了良好的泛化能力、知识储备或推理能力。小模型更容易“记住”训练数据中的表面模式（比如特定短语、句子结构、格式），而不是真正“理解”其含义。这导致它们在面对需要知识、推理或稍微偏离训练模式的prompt时，容易产生幻觉和不连贯的输出。
 
-添加 `--enable_flash_attention` 参数后，可以启用 Triton 实现的 Flash Attention 前向推理，Flash Attention 原理可参考博客：[Flash Attention](https://wkq9411.github.io/2026-04-27/Paper-FlashAttention.html)。在 `eval/eval_flash_attention.ipynb` 中与 naive pytorch 实现的 attention 实现进行了对比，效果如下：
-
-<div align="center">
-<img src="./assets/flash_attention.png" width="50%" alt="flash_attention">
-</div>
-
-由于我们在 `example` 中的推理示例仅进行单 batch 的短序列推理，因此体感差异不大。
-
-# 三、架构实验室
+## （十一）架构实验室
 
 需确保安装 Node.js，建议 20 及以上版本，并执行 `scripts` 中的 `setup`，然后使用如下命令启动：
 
@@ -392,11 +425,11 @@ https://github.com/user-attachments/assets/919d3b61-0664-4f0b-ae33-e9565f57155c
 # Star History
 
 <div align="center">
-  <a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&logscale=&legend=top-left">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left" />
-      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left" />
-    </picture>
+  <a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
+  </picture>
   </a>
 </div>

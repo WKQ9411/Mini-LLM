@@ -7,7 +7,7 @@ name = "mini-llm"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "datasets>=4.1.1",
     "fastparquet>=2024.11.0",
@@ -20,7 +20,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "tokenizers>=0.22.0",
     "tqdm>=4.67.1",
-    "transformers==4.56.1",
+    "transformers==5.13.0",
     "jsonlines",
     "tensorboard",
     "openai",
@@ -28,7 +28,7 @@ dependencies = [
     "python-dotenv",
     "json-repair",
     "dotenv>=0.9.9",
-    "wrap-openai",
+    "wrap-openai==0.3.1",
     "numpy",
     "fastapi",
     "uvicorn[standard]",
@@ -108,4 +108,4 @@ url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["mini_models", "data_loader"]
+packages = ["mini_models", "data_loader", "mini_inference"]

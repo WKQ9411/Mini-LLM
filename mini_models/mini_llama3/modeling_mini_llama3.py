@@ -38,12 +38,9 @@ class MiniLlama3DecoderLayer(nn.Module):
             layer_idx=layer_idx,
             hidden_size=config.hidden_size,
             num_attention_heads=config.num_attention_heads,
-            max_position_embeddings=config.max_position_embeddings,
-            rope_theta=config.rope_theta,
             num_key_value_heads=config.num_key_value_heads,
             head_dim=config.head_dim,
             attention_bias=config.attention_bias,
-            flash_attention=config.flash_attention,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -122,8 +119,7 @@ class MiniLlama3Model(MiniLlama3PreTrainedModel):
         self.rotary_emb = RotaryEmbedding(
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.head_dim,
-            rope_theta=config.rope_theta,
-            rope_scaling=config.rope_scaling,
+            rope_parameters=config.rope_parameters,
         )
 
         # 调用父类方法，其中主要会进行：
@@ -199,7 +195,6 @@ class MiniLlama3Model(MiniLlama3PreTrainedModel):
             self.config,
             inputs_embeds,
             attention_mask=attention_mask,
-            cache_position=cache_position,
             past_key_values=past_key_values,
             position_ids=position_ids,
         )
@@ -230,7 +225,7 @@ class MiniLlama3Model(MiniLlama3PreTrainedModel):
 
 # mini_llama3 因果语言模型
 class MiniLlama3ForCausalLM(MiniLlama3PreTrainedModel, GenerationMixin):
-    _tied_weights_keys = ["lm_head.weight"]  # 声明需要共享的权重
+    _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}  # 声明需要共享的权重
     architecture_type = "Dense"  # 自定义字段
 
     def __init__(self, config: MiniLlama3Config):

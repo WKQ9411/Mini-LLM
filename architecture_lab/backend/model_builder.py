@@ -275,8 +275,6 @@ class TransformerLM(nn.Module):
                 layer_idx=layer_idx,
                 hidden_size=hidden_size,
                 num_attention_heads=p["num_attention_heads"],
-                max_position_embeddings=max_seq_len,
-                rope_theta=p["rope_theta"],
                 num_key_value_heads=p["num_key_value_heads"],
                 head_dim=head_dim,
             )
@@ -285,7 +283,6 @@ class TransformerLM(nn.Module):
                 layer_idx=layer_idx,
                 hidden_size=hidden_size,
                 num_attention_heads=p["num_attention_heads"],
-                rope_theta=p["rope_theta"],
                 num_key_value_heads=p["num_key_value_heads"],
                 head_dim=head_dim,
                 rms_norm_eps=p["rms_norm_eps"],

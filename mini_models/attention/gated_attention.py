@@ -1,12 +1,9 @@
-from typing import Tuple, Optional
+from typing import Optional
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
-from transformers.cache_utils import Cache
 from .utils import repeat_kv
-from .flash_attention_triton import flash_attention_forward, is_flash_attention_available
 from ..rope import apply_rotary_emb
 from ..cache import MiniQwen3NextDynamicCache
 from ..norm import ZeroCenteredRMSNorm
@@ -20,7 +17,6 @@ class GatedAttention(nn.Module):
         layer_idx (int): 层索引
         hidden_size (int): 隐状态维度
         num_attention_heads (int): 注意力头数, 即 query 头数
-        rope_theta (float): RoPE 的底数, 默认为 10000.0
         num_key_value_heads (Optional[int]): key-value 头数, 如果为 None, 则与 query 头数相同, 此时为 MHA
         head_dim (Optional[int]): 每个头的维度, 如果为 None, 则使用 hidden_size // num_attention_heads
         attention_bias (bool): 是否使用注意力偏置, 默认为 False
@@ -32,12 +28,10 @@ class GatedAttention(nn.Module):
         layer_idx: int,
         hidden_size: int,
         num_attention_heads: int,
-        rope_theta: float = 10000.0,
         num_key_value_heads: Optional[int] = None,
         head_dim: Optional[int] = None,
         attention_bias: bool = False,
         rms_norm_eps: float = 1e-6,
-        flash_attention: bool = False,
     ):
         super().__init__()
         self.layer_idx = layer_idx
@@ -45,7 +39,6 @@ class GatedAttention(nn.Module):
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_attention_heads if num_key_value_heads is None else num_key_value_heads
         self.head_dim = head_dim
-        self.flash_attention = flash_attention
 
         # 计算重复次数：每个 kv 头对应的 query 头数
         assert self.num_attention_heads % self.num_key_value_heads == 0, "num_attention_heads must be divisible by num_key_value_heads"
@@ -63,25 +56,6 @@ class GatedAttention(nn.Module):
 
         # 注意力缩放因子
         self.scaling = self.head_dim**-0.5
-
-    def _use_flash_attention(
-        self,
-        query_states: torch.Tensor,
-        key_states: torch.Tensor,
-        cache_position: Optional[torch.LongTensor] = None,
-    ) -> bool:
-        q_len = query_states.shape[-2]
-        kv_len = key_states.shape[-2]
-        is_prefill = cache_position is None or int(cache_position.reshape(-1)[0].item()) == 0
-        return (
-            not self.training
-            and self.flash_attention
-            and query_states.is_cuda
-            and is_flash_attention_available()
-            and q_len > 1
-            and q_len == kv_len
-            and is_prefill
-        )
 
     def forward(
         self,
@@ -129,20 +103,6 @@ class GatedAttention(nn.Module):
         # 重复 key 和 value 以匹配 query 头数
         key_states = repeat_kv(key_states, self.num_key_value_groups)  # (batch_size, n_heads, k_len, head_dim)
         value_states = repeat_kv(value_states, self.num_key_value_groups)  # (batch_size, n_heads, k_len, head_dim)
-
-        if self._use_flash_attention(query_states, key_states, cache_position):
-            attn_output = flash_attention_forward(
-                query_states,
-                key_states,
-                value_states,
-                attention_mask=attention_mask,
-                scale=self.scaling,
-            )
-            attn_output = attn_output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-            attn_output = attn_output * torch.sigmoid(gate)
-            attn_output = self.o_proj(attn_output)
-            return attn_output, None
 
         # 计算缩放点积注意力
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scaling  # (batch_size, n_heads, q_len, k_len)

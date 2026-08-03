@@ -1,10 +1,13 @@
-from transformers import PretrainedConfig
+from huggingface_hub.dataclasses import strict
+from transformers import PreTrainedConfig
+from transformers.modeling_rope_utils import RopeParameters
 
 
-class MiniQwen3NextConfig(PretrainedConfig):
+@strict
+class MiniQwen3NextConfig(PreTrainedConfig):
     """
     mini_qwen3_next 模型配置参数
-    
+
     Attributes:
         vocab_size (int): 词典大小
         hidden_size (int): 隐藏层大小
@@ -16,8 +19,7 @@ class MiniQwen3NextConfig(PretrainedConfig):
         initializer_range (float): 初始化参数范围
         rms_norm_eps (float): RMSNorm 的 eps
         use_cache (bool): 是否使用缓存
-        rope_theta (float): RoPE 的底, 默认为 10000.0
-        rope_scaling (dict): ROPE 缩放参数
+        rope_parameters (dict): RoPE 参数，包含 rope_theta 和可选缩放参数
         attention_bias (bool): 是否使用注意力偏置
         head_dim (int): 每个头的维度
         linear_conv_kernel_dim (int): 卷积核的维度
@@ -35,84 +37,57 @@ class MiniQwen3NextConfig(PretrainedConfig):
         router_aux_loss_coef (float): 路由辅助损失系数
         mlp_only_layers (list[int]): 用于控制哪些层使用 MLP 而不是 MoE
         layer_types (list[str]): 手动设置层类型
+        pad_token_id (int): Padding token ID
+        bos_token_id (int): 序列开始 token ID
+        eos_token_id (int | list[int]): 序列结束 token ID
+        tie_word_embeddings (bool): 是否共享输入词嵌入与输出投影权重
     """
-    model_type = "mini_qwen3_next"
-    
-    def __init__(
-        self,
-        vocab_size: int = -1,  # 加载时覆盖
-        hidden_size: int | None = 768,
-        intermediate_size: int | None = 2112,
-        num_hidden_layers: int | None = 12,
-        num_attention_heads: int | None = 12,
-        num_key_value_heads: int | None = 2,
-        max_position_embeddings: int | None = 512,
-        initializer_range: float | None = 0.02,
-        rms_norm_eps: float | None = 1e-6,
-        use_cache: bool | None = True,
-        flash_attention: bool | None = False,
-        rope_theta: float = 10000.0,
-        rope_scaling: dict = None,
-        attention_bias: bool | None = False,
-        head_dim: int | None = 64,
-        linear_conv_kernel_dim: int | None = 4,
-        linear_key_head_dim: int | None = 64,
-        linear_value_head_dim: int | None = 64,
-        linear_num_key_heads: int | None = 6,
-        linear_num_value_heads: int | None = 12,
-        decoder_sparse_step: int | None = 1,
-        moe_intermediate_size: int | None = 512,
-        shared_expert_intermediate_size: int | None = 512,
-        num_experts_per_tok: int | None = 2,
-        num_experts: int | None = 8,
-        norm_topk_prob: bool | None = True,
-        output_router_logits: bool | None = True,
-        router_aux_loss_coef: float | None = 0.01,
-        mlp_only_layers: list[int] | None = [0,1,2],
-        layer_types: list[str] | None = None,
-        **kwargs,
-    ):
-        self.vocab_size = vocab_size
-        self.max_position_embeddings = max_position_embeddings
-        self.hidden_size = hidden_size
-        self.intermediate_size = intermediate_size
-        self.num_hidden_layers = num_hidden_layers
-        self.num_attention_heads = num_attention_heads
-        self.num_key_value_heads = num_key_value_heads
-        self.initializer_range = initializer_range
-        self.rms_norm_eps = rms_norm_eps
-        self.use_cache = use_cache
-        self.flash_attention = flash_attention
-        self.attention_bias = attention_bias
-        self.head_dim = head_dim
-        self.rope_theta = rope_theta
-        self.rope_scaling = rope_scaling
 
-        self.layer_types = layer_types
+    model_type = "mini_qwen3_next"
+
+    vocab_size: int = -1
+    hidden_size: int = 768
+    intermediate_size: int = 2112
+    num_hidden_layers: int = 12
+    num_attention_heads: int = 12
+    num_key_value_heads: int = 2
+    max_position_embeddings: int = 512
+    initializer_range: float = 0.02
+    rms_norm_eps: float = 1e-6
+    use_cache: bool = True
+    rope_parameters: RopeParameters | dict | None = None
+    attention_bias: bool = False
+    head_dim: int = 64
+
+    linear_conv_kernel_dim: int = 4
+    linear_key_head_dim: int = 64
+    linear_value_head_dim: int = 64
+    linear_num_key_heads: int = 6
+    linear_num_value_heads: int = 12
+
+    decoder_sparse_step: int = 1
+    moe_intermediate_size: int = 512
+    shared_expert_intermediate_size: int = 512
+    num_experts_per_tok: int = 2
+    num_experts: int = 8
+    norm_topk_prob: bool = True
+    output_router_logits: bool = True
+    router_aux_loss_coef: float = 0.01
+    mlp_only_layers: list[int] | None = None
+    layer_types: list[str] | None = None
+
+    pad_token_id: int | None = None
+    bos_token_id: int | None = None
+    eos_token_id: int | list[int] | None = None
+    tie_word_embeddings: bool = True
+
+    def __post_init__(self, **kwargs):
+        self.mlp_only_layers = [0, 1, 2] if self.mlp_only_layers is None else self.mlp_only_layers
         if self.layer_types is None:
-            interval_pattern = kwargs.get("full_attention_interval", 4)
+            full_attention_interval = kwargs.pop("full_attention_interval", 4)
             self.layer_types = [
-                "linear_attention" if bool((i + 1) % interval_pattern) else "full_attention"  # 默认每 3 层 linear_attention 加入 1 层 full_attention
-                for i in range(self.num_hidden_layers)
+                "linear_attention" if (layer_idx + 1) % full_attention_interval else "full_attention"
+                for layer_idx in range(self.num_hidden_layers)
             ]
 
-        # linear attention
-        self.linear_conv_kernel_dim = linear_conv_kernel_dim
-        self.linear_key_head_dim = linear_key_head_dim
-        self.linear_value_head_dim = linear_value_head_dim
-        self.linear_num_key_heads = linear_num_key_heads
-        self.linear_num_value_heads = linear_num_value_heads
-
-        # MoE
-        self.decoder_sparse_step = decoder_sparse_step
-        self.moe_intermediate_size = moe_intermediate_size
-        self.shared_expert_intermediate_size = shared_expert_intermediate_size
-        self.num_experts_per_tok = num_experts_per_tok
-        self.num_experts = num_experts
-        self.norm_topk_prob = norm_topk_prob
-        self.output_router_logits = output_router_logits
-        self.router_aux_loss_coef = router_aux_loss_coef
-        self.mlp_only_layers = mlp_only_layers
-        
-        # 父类初始化
-        super().__init__(**kwargs)
+        super().__post_init__(**kwargs)

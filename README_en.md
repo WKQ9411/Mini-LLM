@@ -22,6 +22,7 @@
 
 # Changelog
 
+- [2026-08-03] Added support for transformers 5.x; introduced `mini_inference` to implement mechanisms such as paged attention and continuous batching.
 - [2026-06-13] Added the Architecture Lab, an interactive environment for quickly testing the pre-training loss of different architecture designs.
 - [2026-05-21] Implemented `mini_deepseekv4` model.
 - [2026-04-27] Added Triton-based Flash Attention forward implementation.
@@ -38,8 +39,6 @@ This project aims to replicate mainstream open-source model architectures with l
 2. Implement common training and inference pipelines from scratch
 
 To achieve this goal, in previous versions of Mini-LLM, we fully customized the `model` package, including base classes such as `BaseModel` and `BaseModelArgs`. Later, we discovered that this approach is similar to transformers library's `PreTrainedModel` and `PretrainedConfig`. Based on this similarity, to better integrate with the HuggingFace ecosystem, we directly refactored the project structure. The current version's models are fully compatible with the transformers library and can directly use methods like `from_pretrained`, `generate` for model loading and inference. At the same time, to deeply understand the principles of training and inference, the project still provides a set of independent training code and generation code implementations. The early version of Mini-LLM has been moved to the legacy branch.
-
-> When this project was established, it was based on transformers 4.x. transformers is now in 5.x, and some function signatures have changed. Compatibility issues may still exist. The project will gradually migrate to transformers 5.x interfaces, while currently pinning to version 4.56.1 for compatibility.
 
 # II. How to Reproduce This Project from Scratch Step by Step
 
@@ -63,6 +62,12 @@ bash ./scripts/setup.sh
 # Windows
 .\scripts\setup.ps1
 ```
+
+`setup` is an interactive configuration script. Option 1 installs the main environment: it automatically detects the CUDA version and installs the corresponding PyTorch, transformers, Triton, and other dependencies. On Windows, it installs `triton-windows`. Option 2 installs the frontend dependencies for the Architecture Lab. Option 3 installs `flash-attn`, which is used only by `eval/eval_inference_throughput.ipynb`. The installer first searches for a compatible prebuilt wheel and falls back to building from source if none is available. Source builds are not guaranteed to work reliably on Windows, so Linux or WSL is recommended.
+
+<div align="center">
+<img src="./assets/setup.png" width="50%" alt="setup script">
+</div>
 
 ## (II) Dataset Preparation
 
@@ -253,11 +258,12 @@ After packing, the SFT curve is relatively smoother.
 
 For the theoretical part of YaRN, please refer to the blog: [YaRN Paper Notes](https://wkq9411.github.io/2026-01-01/Paper-YaRN.html)
 
-Pass the `rope_scaling` parameter into the model configuration, for example:
+Pass the Transformers 5.x `rope_parameters` argument into the model configuration, for example:
 
 ```python
-rope_scaling = {
+rope_parameters = {
    "rope_type": "yarn",
+   "rope_theta": 10000.0,
    "factor": 4.0,
    "attention_factor": None,  # Defaults to None and is calculated internally
    "beta_fast": 32,
@@ -335,41 +341,68 @@ The results show that after GRPO, the model further improves in format following
 
 ## (X) Inference
 
-Inference demo code is located in the `example` folder. You can use the project's custom `Generator` class for inference, or use transformers' native `generate` method for inference.
-
-Run in terminal:
+The inference demos are located in the `example` folder and include the following files:
 
 ```shell
-python ./example/test_terminal.py --model_name=mini_deepseekv3
+example/test_api.py  # Wraps the model as an OpenAI-compatible API for chat applications
+example/test_terminal.py  # Selects the custom Generator, native generate, or mini_inference in the terminal
 ```
 
-For more inference parameter descriptions, please refer to the `parse_args()` function in `example/test_terminal.py`.
+1. Inference through the API
 
-You can also perform inference via API, providing it to popular frontends for dialogue (wrapped with `wrap-openai` to provide OpenAI-compatible API, you can refer to my other repository [wrap-openai](https://github.com/WKQ9411/wrap-openai)). Start the backend with the following command:
+The OpenAI-compatible API can be used with popular chat applications. First, generate an API key or list the existing keys with the following commands:
+
+```shell
+wrap-openai --generate --name "my_key"
+wrap-openai --list
+```
+
+`wrap-openai` is a project dependency that wraps a generate function as an OpenAI-compatible API. For more usage information, refer to my other repository, [wrap-openai](https://github.com/WKQ9411/wrap-openai). Then start the server with the following command:
 
 ```shell
 python ./example/test_api.py --model_name=mini_deepseekv3
 ```
 
-Taking [CherryStudio](https://www.cherry-ai.com/) as an example, after configuring the OpenAI-compatible API, the dialogue effect is as follows:
+Using [CherryStudio](https://www.cherry-ai.com/) as an example, configure the OpenAI-compatible API and set the model ID to the value passed through `--model_name`. The chat result is shown below:
+
+https://github.com/user-attachments/assets/f9a703ef-07a5-4d6c-a680-c9c1f707d8a5
+
+2. Inference in the terminal
+
+```shell
+# Use the custom Generator by default
+python ./example/test_terminal.py --model_name=mini_deepseekv3
+
+# Use the native generate method
+python ./example/test_terminal.py --model_name=mini_deepseekv3 --generate_func=transformers
+
+# Use mini_inference (currently supports mini_llama3 only)
+python ./example/test_terminal.py --model_name=mini_llama3 --generate_func=mini_inference
+```
+
+For more information about inference parameters, refer to the `parse_args()` function in `example/test_terminal.py`.
+
+This project's `mini_inference` implementation is based on [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm). It supports mechanisms such as paged attention and continuous batching, which can improve inference throughput and reduce latency. In addition to retaining the original functionality, it supports models trained by this project and includes custom Triton kernel implementations. The benchmark results are shown below:
 
 <div align="center">
-<img src="./assets/example.gif" width="100%" alt="example">
+<img src="./assets/batch_1_test_1.png" width="70%" alt="batch_1_test_1">
 </div>
 
-In addition, the model parameters of this project have been uploaded to HuggingFace and can be directly downloaded and used. Usage methods can be found in `example/use_example.ipynb`.
+<div align="center">
+<img src="./assets/batch_1_test_2.png" width="70%" alt="batch_1_test_2">
+</div>
+
+<div align="center">
+<img src="./assets/continuous_batching_test.png" width="70%" alt="continuous_batching_test">
+</div>
+
+For more details, refer to `eval/eval_inference_throughput.ipynb`.
+
+In addition, the model weights of this project have been uploaded to HuggingFace and can be downloaded and used directly. See `example/use_example.ipynb` for usage examples.
 
 > Due to the small model parameter size, while it may predict the next token relatively well to some extent, this does not mean it has good generalization ability, knowledge base, or reasoning ability. Small models are more likely to "remember" surface patterns in training data (such as specific phrases, sentence structures, formats) rather than truly "understand" their meaning. This causes them to easily produce hallucinations and incoherent outputs when facing prompts that require knowledge, reasoning, or slightly deviate from training patterns.
 
-Add the `--enable_flash_attention` flag to enable Triton-based Flash Attention forward inference. For the Flash Attention principle, see the blog: [Flash Attention](https://wkq9411.github.io/2026-04-27/Paper-FlashAttention.html). In `eval/eval_flash_attention.ipynb`, it is compared against a naive PyTorch attention implementation, with results shown below:
-
-<div align="center">
-<img src="./assets/flash_attention.png" width="50%" alt="flash_attention">
-</div>
-
-Since the inference demos in `example` only run short-sequence, single-batch generation, the perceived difference is usually small.
-
-# III. Architecture Lab
+## (XI) Architecture Lab
 
 Make sure Node.js is installed (version 20 or above is recommended), run the `setup` script in `scripts`, and then start it using the following command:
 
@@ -390,12 +423,11 @@ https://github.com/user-attachments/assets/919d3b61-0664-4f0b-ae33-e9565f57155c
 # Star History
 
 <div align="center">
-  <a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&logscale=&legend=top-left">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left" />
-      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left" />
-    </picture>
+  <a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
+  </picture>
   </a>
 </div>
-

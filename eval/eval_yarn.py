@@ -133,15 +133,16 @@ def collect_long_samples(
 def build_yarn_config(config, target_max_seq_len: int, yarn_alpha: float, yarn_beta: float):
     original_max_position_embeddings = int(config.max_position_embeddings)
     factor = target_max_seq_len / original_max_position_embeddings
-    rope_scaling = {
+    rope_parameters = {
         "rope_type": "yarn",
+        "rope_theta": config.rope_parameters["rope_theta"],
         "factor": factor,
         "attention_factor": None,
         "beta_fast": yarn_beta,
         "beta_slow": yarn_alpha,
     }
     config.max_position_embeddings = target_max_seq_len
-    config.rope_scaling = rope_scaling
+    config.rope_parameters = rope_parameters
     return config
 
 

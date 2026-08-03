@@ -1,112 +1,253 @@
 ﻿#!/usr/bin/env pwsh
 
-# 此脚本用于程序化的一键配置，可能存在一定逻辑疏漏，应该能适配大多数使用cuda的情况
-# 前三步分别为检测系统信息、安装uv、通过uv同步环境，尤其是特定的torch版本
-# 之后的环境配置根据项目的不同进行相应的配置即可
-# 请使用UTF-8 with BOM编码，通过powershell运行
-# VS Code: 在右下角点击编码，选择"Save with Encoding" → "UTF-8 with BOM"
+# 此脚本同时兼容 Windows PowerShell 5.1 和 PowerShell 7
+# 请使用 UTF-8 with BOM 编码，避免 Windows PowerShell 5.1 读取中文和符号时乱码
+$ErrorActionPreference = "Stop"
 
-$ErrorActionPreference = "Stop"  # 遇到错误时退出
-
-# 符号定义
 $CHECK_MARK = "✅"
 $CROSS_MARK = "❌"
 $INFO_MARK = "ℹ️"
 $WARNING_MARK = "⚠️"
-$RUNNING_MARK = "⚡"
-$SYSTEM_MARK = "🖥️"
-$GAME_MARK = "🎮"
-$MEMORY_MARK = "💾"
-$PACKAGE_MARK = "📦"
-$ROCKET_MARK = "🚀"
-$CHART_MARK = "📊"
-$TOOL_MARK = "🛠️"
-$FIRE_MARK = "🔥"
-$FROZEN_MARK = "❄️"
-$SETTING_MARK = "⚙️"
-$LIGHT_BULB_MARK = "💡"
-$BOOK_MARK = "📚"
-$LINK_MARK = "🔗"
-$SUCCESS_MARK = "🎉"
+$RUNNING_MARK = "⏳"
 
-# 输出函数定义
-function Write-Phase {
+$script:ProjectRoot = try { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path } catch { (Get-Location).Path }
+$script:FrontendPath = Join-Path $script:ProjectRoot "architecture_lab/frontend"
+$script:VenvPython = Join-Path $script:ProjectRoot ".venv/Scripts/python.exe"
+$script:SetupHelper = Join-Path $PSScriptRoot "setup_helper.py"
+$script:PythonVersion = "3.12"
+$script:NvidiaAvailable = $false
+$script:DriverCuda = ""
+$script:GpuDetails = @()
+$script:GpuCount = 0
+$script:DetectedOs = "Windows"
+$script:DetectedArch = $env:PROCESSOR_ARCHITECTURE
+$script:DetectedPowerShell = $PSVersionTable.PSVersion.ToString()
+$script:DetectedCudaRuntime = ""
+$script:SystemInfoInitialized = $false
+$script:ComponentStatus = $null
+$script:ActionSucceeded = $false
+
+
+function Write-Section {
     param([string]$Message)
-    Write-Host $Message -ForegroundColor Magenta -NoNewline
     Write-Host ""
+    Write-Host "$RUNNING_MARK  $Message" -ForegroundColor Magenta
 }
 
-function Write-Info {
+
+function Write-InfoLine {
     param([string]$Message)
     Write-Host "$INFO_MARK   " -NoNewline
     Write-Host $Message -ForegroundColor Blue
 }
 
-function Write-Success {
+
+function Write-SuccessLine {
     param([string]$Message)
     Write-Host "$CHECK_MARK  " -NoNewline
     Write-Host $Message -ForegroundColor Green
 }
 
-function Write-Warning {
+
+function Write-WarningLine {
     param([string]$Message)
     Write-Host "$WARNING_MARK  " -NoNewline
     Write-Host $Message -ForegroundColor Yellow
 }
 
-function Write-Error {
+
+function Write-FailureLine {
     param([string]$Message)
     Write-Host "$CROSS_MARK  " -NoNewline
     Write-Host $Message -ForegroundColor Red
 }
 
-function Write-Running {
-    param([string]$Message)
-    Write-Host $Message -ForegroundColor White
+
+function Show-Banner {
+    $logoLines = @(
+        "  ███╗   ███╗ ██╗ ███╗   ██╗ ██╗        ██╗      ██╗      ███╗   ███╗"
+        "  ████╗ ████║ ██║ ████╗  ██║ ██║        ██║      ██║      ████╗ ████║"
+        "  ██╔████╔██║ ██║ ██╔██╗ ██║ ██║ █████╗ ██║      ██║      ██╔████╔██║"
+        "  ██║╚██╔╝██║ ██║ ██║╚██╗██║ ██║ ╚════╝ ██║      ██║      ██║╚██╔╝██║"
+        "  ██║ ╚═╝ ██║ ██║ ██║ ╚████║ ██║        ███████╗ ███████╗ ██║ ╚═╝ ██║"
+        "  ╚═╝     ╚═╝ ╚═╝ ╚═╝  ╚═══╝ ╚═╝        ╚══════╝ ╚══════╝ ╚═╝     ╚═╝"
+    )
+    $miniSectionWidth = 40
+
+    Write-Host ""
+    foreach ($line in $logoLines) {
+        Write-Host $line.Substring(0, $miniSectionWidth) -ForegroundColor DarkBlue -NoNewline
+        Write-Host $line.Substring($miniSectionWidth) -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "  Interactive Environment Setup" -ForegroundColor White
+    Write-Host "  $script:ProjectRoot" -ForegroundColor DarkGray
 }
 
-# 全局变量
-$script:DETECTED_OS = ""
-$script:DETECTED_ARCH = ""
-$script:DETECTED_PS_VERSION = ""
-$script:CUDA_AVAILABLE = $false
-$script:DETECTED_CUDA = ""
-$script:DETECTED_CUDA_RUNTIME = ""
-$script:GPU_AVAILABLE = $false
-$script:DETECTED_GPU_COUNT = 0
-$script:GPU_DETAILS = @()
-$script:UV_AVAILABLE = $false
-$script:DETECTED_UV_VERSION = ""
-$script:PROJECT_ROOT = try { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path } catch { (Get-Location).Path }
 
-# 展示系统信息
+function Confirm-Action {
+    param(
+        [string]$Message,
+        [bool]$DefaultYes = $false
+    )
+    $suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+    $answer = Read-Host "  $Message $suffix"
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+        return $DefaultYes
+    }
+    return $answer -match "^[yY]$"
+}
+
+
+function Pause-Menu {
+    Write-Host ""
+    Read-Host "  Press Enter to return to the menu" | Out-Null
+}
+
+
+function Test-VenvModule {
+    param([string]$ModuleName)
+    if (-not (Test-Path $script:VenvPython) -or -not (Test-Path $script:SetupHelper)) {
+        return $false
+    }
+    try {
+        & $script:VenvPython $script:SetupHelper module-available $ModuleName *> $null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    }
+}
+
+
+function Get-VenvStatus {
+    if (-not (Test-Path $script:VenvPython) -or -not (Test-Path $script:SetupHelper)) {
+        return $null
+    }
+    try {
+        $output = & $script:VenvPython $script:SetupHelper status 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+        return (($output | Select-Object -Last 1) | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+
+function Get-ComponentStatus {
+    $venv = Get-VenvStatus
+    $uvReady = $false
+    $uvStatus = "not installed"
+    if (Get-Command uv -ErrorAction SilentlyContinue) {
+        try {
+            $uvStatus = (& uv --version 2>$null | Select-Object -Last 1)
+            $uvReady = $LASTEXITCODE -eq 0
+        } catch {}
+    }
+
+    $nodeReady = $false
+    $nodeStatus = "not installed"
+    if (Get-Command node -ErrorAction SilentlyContinue) {
+        try {
+            $nodeText = ((& node --version 2>$null) -replace '^v', '').Split('-')[0]
+            $nodeVersion = [version]$nodeText
+            $nodeReady = Test-NodeVersion $nodeVersion
+            $nodeStatus = if ($nodeReady) { "v$nodeVersion" } else { "v$nodeVersion (upgrade required)" }
+        } catch {
+            $nodeStatus = "installed, version unknown"
+        }
+    }
+
+    $mainReady = $null -ne $venv -and $venv.torch.available
+    if ($mainReady) {
+        $mainStatus = "ready (Python $($venv.python), PyTorch $($venv.torch.version))"
+    } elseif ($null -ne $venv) {
+        $mainStatus = if ($venv.torch.installed) {
+            "incomplete (PyTorch import failed)"
+        } else {
+            "incomplete (Python $($venv.python))"
+        }
+    } else {
+        $mainStatus = "not installed"
+    }
+
+    $tritonReady = $null -ne $venv -and $venv.triton.available
+    if ($tritonReady) {
+        $tritonStatus = "ready ($($venv.triton.version))"
+    } elseif ($null -ne $venv -and $venv.triton.installed) {
+        $tritonStatus = "installed but unavailable"
+    } else {
+        $tritonStatus = "not installed"
+    }
+
+    $flashReady = $null -ne $venv -and $venv.flash_attn.available
+    if ($flashReady) {
+        $flashStatus = "ready ($($venv.flash_attn.version))"
+    } elseif ($null -ne $venv -and $venv.flash_attn.installed) {
+        $flashStatus = "installed but unavailable"
+    } else {
+        $flashStatus = "not installed"
+    }
+    $frontendReady = Test-Path (Join-Path $script:FrontendPath "dist")
+    $frontendStatus = if ($frontendReady) { "ready" } else { "not installed" }
+
+    return [PSCustomObject]@{
+        Uv = $uvStatus
+        UvReady = $uvReady
+        Main = $mainStatus
+        MainReady = $mainReady
+        Triton = $tritonStatus
+        TritonReady = $tritonReady
+        Node = $nodeStatus
+        NodeReady = $nodeReady
+        Frontend = $frontendStatus
+        FrontendReady = $frontendReady
+        Flash = $flashStatus
+        FlashReady = $flashReady
+    }
+}
+
+
+function Write-StatusLine {
+    param(
+        [string]$Name,
+        [string]$Value,
+        [bool]$Ready
+    )
+    $color = if ($Ready) { "Green" } else { "Yellow" }
+    Write-Host "$Name`: " -NoNewline
+    Write-Host $Value -ForegroundColor $color
+}
+
+
 function Show-DetectionSummary {
-    Write-Info "System Information:"
+    Write-InfoLine "System Information:"
     Write-Host "Operating System: " -NoNewline
-    Write-Host $script:DETECTED_OS -ForegroundColor Green
+    Write-Host $script:DetectedOs -ForegroundColor Green
     Write-Host "System Architecture: " -NoNewline
-    Write-Host $script:DETECTED_ARCH -ForegroundColor Green
+    Write-Host $script:DetectedArch -ForegroundColor Green
     Write-Host "PowerShell Version: " -NoNewline
-    Write-Host $script:DETECTED_PS_VERSION -ForegroundColor Green
-    
-    Write-Info "CUDA Information:"
-    if ($script:CUDA_AVAILABLE) {
+    Write-Host $script:DetectedPowerShell -ForegroundColor Green
+
+    Write-InfoLine "CUDA Information:"
+    if (-not [string]::IsNullOrWhiteSpace($script:DriverCuda)) {
         Write-Host "CUDA Version: " -NoNewline
-        Write-Host $script:DETECTED_CUDA -ForegroundColor Green
-        if ($script:DETECTED_CUDA_RUNTIME) {
+        Write-Host $script:DriverCuda -ForegroundColor Green
+        if (-not [string]::IsNullOrWhiteSpace($script:DetectedCudaRuntime)) {
             Write-Host "Runtime Version: " -NoNewline
-            Write-Host $script:DETECTED_CUDA_RUNTIME -ForegroundColor Green
+            Write-Host $script:DetectedCudaRuntime -ForegroundColor Green
         }
     } else {
         Write-Host "CUDA not installed or unavailable" -ForegroundColor Red
     }
 
-    Write-Info "GPU Information:"
-    if ($script:GPU_AVAILABLE) {
+    Write-InfoLine "GPU Information:"
+    if ($script:NvidiaAvailable) {
         Write-Host "GPU Count: " -NoNewline
-        Write-Host $script:DETECTED_GPU_COUNT -ForegroundColor Green
+        Write-Host $script:GpuCount -ForegroundColor Green
         Write-Host "GPU Details:" -ForegroundColor Green
-        foreach ($gpu in $script:GPU_DETAILS) {
+        foreach ($gpu in $script:GpuDetails) {
             Write-Host "  - $gpu" -ForegroundColor Green
         }
     } else {
@@ -114,377 +255,507 @@ function Show-DetectionSummary {
     }
 }
 
-# 检测系统版本
-function Get-SystemInfo {
-    try {
-        $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
-        $script:DETECTED_OS = "$($osInfo.Caption) $($osInfo.Version)"
-        
-        $arch = (Get-CimInstance -ClassName Win32_Processor).Architecture
-        $script:DETECTED_ARCH = switch ($arch) {
-            0 { "x86" }
-            9 { "x64" }
-            5 { "ARM" }
-            12 { "ARM64" }
-            default { "Unknown" }
-        }
-        
-        $script:DETECTED_PS_VERSION = $PSVersionTable.PSVersion.ToString()
-    } catch {
-        $script:DETECTED_OS = "Windows (Unknown Version)"
-        $script:DETECTED_ARCH = $env:PROCESSOR_ARCHITECTURE
-        $script:DETECTED_PS_VERSION = $PSVersionTable.PSVersion.ToString()
-    }
+
+function Show-InstalledStatus {
+    param([PSCustomObject]$Status)
+    Write-InfoLine "Installed Status:"
+    Write-StatusLine "uv" $Status.Uv $Status.UvReady
+    Write-StatusLine "Node.js" $Status.Node $Status.NodeReady
+    Write-StatusLine "Main environment" $Status.Main $Status.MainReady
+    Write-StatusLine "Triton" $Status.Triton $Status.TritonReady
+    Write-StatusLine "Architecture Lab" $Status.Frontend $Status.FrontendReady
+    Write-StatusLine "flash-attn" $Status.Flash $Status.FlashReady
 }
 
-# 检测CUDA版本
-# 优先使用 nvidia-smi 检测 CUDA 运行时版本，因为安装 PyTorch 主要需要运行时版本
-function Get-CudaInfo {
-    $script:CUDA_AVAILABLE = $false
-    $script:DETECTED_CUDA = ""
-    $script:DETECTED_CUDA_RUNTIME = ""
-    
-    # 优先使用 nvidia-smi 检测 CUDA 运行时版本（这是安装 PyTorch 最需要的）
+
+function Show-Menu {
+    Clear-Host
+    Show-Banner
+
+    if (-not $script:SystemInfoInitialized) {
+        Start-Sleep -Milliseconds 500
+        Write-Section "Detecting system devices and CUDA..."
+        Update-SystemInfo
+        $script:SystemInfoInitialized = $true
+    }
+    Show-DetectionSummary
+
+    if ($null -eq $script:ComponentStatus) {
+        Write-Section "Checking installed components..."
+        $script:ComponentStatus = Get-ComponentStatus
+    }
+    Show-InstalledStatus $script:ComponentStatus
+
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "  Environment Setup Menu" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    Write-Host "[1] " -NoNewline -ForegroundColor Green
+    Write-Host "Install main environment"
+    Write-Host "    Detect CUDA and install PyTorch, Triton and project dependencies" -ForegroundColor Gray
+    Write-Host ""
+
+    Write-Host "[2] " -NoNewline -ForegroundColor Green
+    Write-Host "Install frontend"
+    Write-Host "    Check Node.js and build the Architecture Lab frontend" -ForegroundColor Gray
+    Write-Host ""
+
+    Write-Host "[3] " -NoNewline -ForegroundColor Green
+    Write-Host "Install flash-attn"
+    Write-Host "    Prefer a matching wheel; ask before compiling from source" -ForegroundColor Gray
+    Write-Host ""
+
+    Write-Host "[q/Q] " -NoNewline -ForegroundColor Yellow
+    Write-Host "Quit"
+    Write-Host ""
+    Write-Host "Please select an option: " -NoNewline -ForegroundColor Cyan
+}
+
+
+function Update-SystemInfo {
+    $script:NvidiaAvailable = $false
+    $script:DriverCuda = ""
+    $script:DetectedCudaRuntime = ""
+    $script:GpuDetails = @()
+    $script:GpuCount = 0
+    $script:DetectedPowerShell = $PSVersionTable.PSVersion.ToString()
+
     try {
-        $smiOutput = & nvidia-smi 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $runtimeMatch = [regex]::Match($smiOutput, "CUDA Version:\s*(\d+\.\d+)")
-            if ($runtimeMatch.Success) {
-                $script:DETECTED_CUDA_RUNTIME = $runtimeMatch.Groups[1].Value
-                $script:DETECTED_CUDA = $script:DETECTED_CUDA_RUNTIME
-                $script:CUDA_AVAILABLE = $true
-            }
+        $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
+        $script:DetectedOs = "$($osInfo.Caption) $($osInfo.Version)"
+        $processor = Get-CimInstance -ClassName Win32_Processor | Select-Object -First 1
+        $script:DetectedArch = switch ($processor.Architecture) {
+            0 { "x86" }
+            5 { "ARM" }
+            9 { "x64" }
+            12 { "ARM64" }
+            default { $env:PROCESSOR_ARCHITECTURE }
         }
     } catch {
-        # nvidia-smi not found, continue
+        $script:DetectedOs = "Windows"
+        $script:DetectedArch = $env:PROCESSOR_ARCHITECTURE
     }
-    
-    # 如果没有通过 nvidia-smi 检测到，尝试其他方法作为备选
-    if (-not $script:CUDA_AVAILABLE) {
-        # 尝试从nvcc获取CUDA版本
+
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
         try {
-            $nvccOutput = & nvcc --version 2>&1
+            $summary = & nvidia-smi 2>&1
             if ($LASTEXITCODE -eq 0) {
-                $cudaMatch = [regex]::Match($nvccOutput, "release (\d+\.\d+)")
+                $cudaMatch = [regex]::Match(($summary -join "`n"), "CUDA Version:\s*(\d+\.\d+)")
                 if ($cudaMatch.Success) {
-                    $script:DETECTED_CUDA = $cudaMatch.Groups[1].Value
-                    $script:CUDA_AVAILABLE = $true
+                    $script:DriverCuda = $cudaMatch.Groups[1].Value
+                    $script:DetectedCudaRuntime = $script:DriverCuda
+                }
+                $details = & nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $script:GpuDetails = @($details | ForEach-Object {
+                        $parts = $_ -split ','
+                        if ($parts.Count -ge 3) {
+                            "GPU $($parts[0].Trim()) : $($parts[1].Trim()) ($($parts[2].Trim())MB)"
+                        }
+                    })
+                    $script:GpuCount = $script:GpuDetails.Count
+                    $script:NvidiaAvailable = $script:GpuDetails.Count -gt 0
                 }
             }
         } catch {
-            # nvcc not found, continue
-        }
-        
-        # 如果nvcc失败，尝试从环境变量或注册表获取
-        if (-not $script:CUDA_AVAILABLE) {
-            if ($env:CUDA_PATH) {
-                $versionFile = Join-Path $env:CUDA_PATH "version.txt"
-                if (Test-Path $versionFile) {
-                    $content = Get-Content $versionFile
-                    $cudaMatch = [regex]::Match($content, "CUDA Version (\d+\.\d+)")
-                    if ($cudaMatch.Success) {
-                        $script:DETECTED_CUDA = $cudaMatch.Groups[1].Value
-                        $script:CUDA_AVAILABLE = $true
-                    }
-                }
-            }
+            $script:NvidiaAvailable = $false
         }
     }
-}
 
-# 检测GPU信息
-function Get-GpuInfo {
-    $script:GPU_AVAILABLE = $false
-    $script:DETECTED_GPU_COUNT = 0
-    $script:GPU_DETAILS = @()
-    
-    try {
-        # 尝试使用nvidia-smi获取GPU信息
-        $gpuListOutput = & nvidia-smi --list-gpus 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $script:DETECTED_GPU_COUNT = ($gpuListOutput | Measure-Object -Line).Lines
-            $script:GPU_AVAILABLE = $true
-            
-            # 获取详细GPU信息
-            $detailOutput = & nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                $script:GPU_DETAILS = $detailOutput | ForEach-Object {
-                    $parts = $_ -split ','
-                    if ($parts.Count -ge 3) {
-                        $index = $parts[0].Trim()
-                        $name = $parts[1].Trim()
-                        $memory = $parts[2].Trim()
-                        "GPU $index : $name (${memory}MB)"
-                    }
-                }
-            }
-        }
-    } catch {
-        # nvidia-smi not found
-    }
-    
-    # 如果nvidia-smi失败，尝试使用WMI
-    if (-not $script:GPU_AVAILABLE) {
+    if (-not $script:NvidiaAvailable) {
         try {
             $gpus = Get-CimInstance -ClassName Win32_VideoController | Where-Object { $_.Name -like "*NVIDIA*" }
             if ($gpus) {
-                $script:GPU_AVAILABLE = $true
-                $script:DETECTED_GPU_COUNT = ($gpus | Measure-Object).Count
-                $script:GPU_DETAILS = $gpus | ForEach-Object {
+                $script:GpuDetails = @($gpus | ForEach-Object {
                     $memory = [math]::Round($_.AdapterRAM / 1MB, 0)
                     "$($_.Name) (${memory}MB)"
-                }
-            }
-        } catch {
-            # WMI query failed
-        }
-    }
-}
-
-# 检测uv是否安装
-function Get-UvInstallation {
-    $script:UV_AVAILABLE = $false
-    $script:DETECTED_UV_VERSION = ""
-    
-    try {
-        $uvVersion = & uv --version 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $versionMatch = [regex]::Match($uvVersion, "uv (\S+)")
-            if ($versionMatch.Success) {
-                $script:DETECTED_UV_VERSION = $versionMatch.Groups[1].Value
-                $script:UV_AVAILABLE = $true
-            }
-        }
-    } catch {
-        # uv not found
-    }
-}
-
-# 安装uv
-function Install-Uv {
-    Write-Running "Starting uv installation..."
-    
-    # 检查Python是否安装
-    $pythonCmd = $null
-    try {
-        & python --version 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            $pythonCmd = "python"
-        }
-    } catch {}
-    
-    if (-not $pythonCmd) {
-        try {
-            & python3 --version 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                $pythonCmd = "python3"
+                })
+                $script:GpuCount = $script:GpuDetails.Count
+                $script:NvidiaAvailable = $true
             }
         } catch {}
     }
-    
-    if (-not $pythonCmd) {
+
+    if ([string]::IsNullOrWhiteSpace($script:DriverCuda) -and (Get-Command nvcc -ErrorAction SilentlyContinue)) {
         try {
-            & py --version 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                $pythonCmd = "py"
+            $nvccOutput = (& nvcc --version 2>&1) -join "`n"
+            $cudaMatch = [regex]::Match($nvccOutput, "release\s+(\d+\.\d+)")
+            if ($cudaMatch.Success) {
+                $script:DriverCuda = $cudaMatch.Groups[1].Value
             }
         } catch {}
     }
-    
-    if (-not $pythonCmd) {
-        Write-Error "Python not installed. Please install Python 3.8+ and try again."
-        Write-Host "You can download Python from: https://www.python.org/downloads/"
-        exit 1
-    }
-    
-    # 安装uv
-    Write-Running "Installing uv using pip..."
-    try {
-        & $pythonCmd -m pip install --upgrade pip 2>&1 | Out-Null
-        & $pythonCmd -m pip install uv 2>&1 | Out-Null
-        
-        # 刷新PATH环境变量
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        
-        # 检查uv是否在PATH中
-        Get-UvInstallation
-        if ($script:UV_AVAILABLE) {
-            Write-Success "uv installation successful, version: $script:DETECTED_UV_VERSION"
-        } else {
-            # 尝试添加用户脚本路径到PATH
-            $userScriptsPath = "$env:APPDATA\Python\Python*\Scripts"
-            $scriptsPaths = Get-ChildItem -Path $userScriptsPath -ErrorAction SilentlyContinue
-            if ($scriptsPaths) {
-                $env:Path += ";$($scriptsPaths[0].FullName)"
-                Get-UvInstallation
-                if ($script:UV_AVAILABLE) {
-                    Write-Success "uv installation successful, version: $script:DETECTED_UV_VERSION"
-                    Write-Warning "Please restart your terminal or add the Scripts folder to PATH permanently"
-                } else {
-                    Write-Error "uv is not in PATH. Please add Python Scripts folder to PATH and retry."
-                    exit 1
-                }
-            } else {
-                Write-Error "uv installation failed or not in PATH"
-                exit 1
+
+    if ([string]::IsNullOrWhiteSpace($script:DriverCuda) -and $env:CUDA_PATH) {
+        $versionFile = Join-Path $env:CUDA_PATH "version.txt"
+        if (Test-Path $versionFile) {
+            $cudaMatch = [regex]::Match((Get-Content $versionFile -Raw), "CUDA Version\s+(\d+\.\d+)")
+            if ($cudaMatch.Success) {
+                $script:DriverCuda = $cudaMatch.Groups[1].Value
             }
         }
-    } catch {
-        Write-Error "uv installation failed: $_"
-        exit 1
     }
 }
 
-# 使用uv同步环境
-function Sync-Environment {
-    Write-Running "Determining appropriate torch installation..."
-    
-    # 确定要安装的extra
-    $extraToInstall = "cpu"  # 默认使用CPU版本
-    
-    if ($script:CUDA_AVAILABLE -and $script:DETECTED_CUDA) {
-        # 提取CUDA主版本号（如11.8 -> 118）
-        $cudaMajor = $script:DETECTED_CUDA -replace '\.', ''
-        if ($cudaMajor.Length -ge 3) {
-            $cudaMajor = $cudaMajor.Substring(0, 3)
+
+function Get-TorchExtra {
+    if (-not $script:NvidiaAvailable -or [string]::IsNullOrWhiteSpace($script:DriverCuda)) {
+        return "cpu"
+    }
+    $version = [version]$script:DriverCuda
+    if ($version -ge [version]"13.0") { return "cu130" }
+    if ($version -ge [version]"12.8") { return "cu128" }
+    if ($version -ge [version]"12.6") { return "cu126" }
+    if ($version -ge [version]"12.4") { return "cu124" }
+    if ($version -ge [version]"12.1") { return "cu121" }
+    if ($version -ge [version]"11.8") { return "cu118" }
+    return "unsupported"
+}
+
+
+function Ensure-Uv {
+    $uv = Get-Command uv -ErrorAction SilentlyContinue
+    if ($uv) {
+        Write-SuccessLine "Found $(& uv --version)"
+        return $true
+    }
+
+    Write-InfoLine "uv was not found. Installing it with the official installer..."
+    try {
+        Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+        $localBin = Join-Path $HOME ".local/bin"
+        if (Test-Path $localBin) {
+            $env:Path = $localBin + [IO.Path]::PathSeparator + $env:Path
         }
-        $cudaMajorInt = [int]$cudaMajor
-        
-        Write-Info "Detected CUDA version: $script:DETECTED_CUDA (version code: $cudaMajor)"
-        
-        # 根据CUDA版本选择兼容的最高版本
-        if ($cudaMajorInt -ge 130) {
-            $extraToInstall = "cu130"
-        } elseif ($cudaMajorInt -ge 128) {
-            $extraToInstall = "cu128"
-        } elseif ($cudaMajorInt -ge 126) {
-            $extraToInstall = "cu126"
-        } elseif ($cudaMajorInt -ge 124) {
-            $extraToInstall = "cu124"
-        } elseif ($cudaMajorInt -ge 121) {
-            $extraToInstall = "cu121"
-        } elseif ($cudaMajorInt -ge 118) {
-            $extraToInstall = "cu118"
-        } else {
-            Write-Warning "CUDA version $script:DETECTED_CUDA is not supported, falling back to CPU version"
-            $extraToInstall = "cpu"
-        }
+    } catch {
+        Write-FailureLine "uv installation failed: $_"
+        return $false
+    }
+
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        Write-FailureLine "uv was installed but is not available in PATH. Restart the terminal and retry."
+        return $false
+    }
+    Write-SuccessLine "Installed $(& uv --version)"
+    return $true
+}
+
+
+function Install-MainEnvironment {
+    Write-Section "Main environment"
+    if (-not $script:SystemInfoInitialized) {
+        Update-SystemInfo
+        $script:SystemInfoInitialized = $true
+    }
+    Write-InfoLine "System: $script:DetectedOs ($script:DetectedArch)"
+    if ($script:NvidiaAvailable) {
+        Write-InfoLine "NVIDIA GPUs: $($script:GpuDetails -join '; ')"
+        Write-InfoLine "Driver CUDA capability: $script:DriverCuda"
     } else {
-        Write-Info "CUDA not available, using CPU version"
+        Write-WarningLine "No usable NVIDIA GPU was detected. The CPU environment will be selected."
     }
-    
-    $syncArgs = @("sync", "--extra", $extraToInstall)
-    if ($script:CUDA_AVAILABLE -and $extraToInstall -ne "cpu") {
+
+    $torchExtra = Get-TorchExtra
+    if ($torchExtra -eq "unsupported") {
+        Write-WarningLine "The detected CUDA capability is older than the supported PyTorch profiles."
+        if (-not (Confirm-Action "Continue with the CPU environment?")) {
+            return
+        }
+        $torchExtra = "cpu"
+    }
+
+    if (Test-VenvModule "flash_attn") {
+        Write-WarningLine "Exact environment synchronization may remove the existing flash-attn build."
+        Write-InfoLine "Install flash-attn again from menu option 3 after the main environment is finalized."
+    }
+
+    if (-not (Ensure-Uv)) {
+        return
+    }
+
+    Write-InfoLine "Preparing Python $script:PythonVersion with uv..."
+    & uv python install $script:PythonVersion
+    if ($LASTEXITCODE -ne 0) {
+        Write-FailureLine "Python $script:PythonVersion installation failed."
+        return
+    }
+
+    $syncArgs = @("sync", "--python", $script:PythonVersion, "--extra", $torchExtra)
+    if ($torchExtra -ne "cpu") {
         $syncArgs += @("--extra", "flash-windows")
-        Write-Info "CUDA support selected, enabling flash attention dependencies"
     }
-    
-    Write-Info "Selected installation target: $extraToInstall"
-    
-    # 执行uv sync
-    Write-Running "Running: uv $($syncArgs -join ' ')"
+
+    $profile = $torchExtra
+    if ($torchExtra -ne "cpu") {
+        $profile += " + triton-windows"
+    }
+    Write-InfoLine "Installation profile: $profile"
+    Write-Host "  > uv $($syncArgs -join ' ')" -ForegroundColor DarkGray
+    Push-Location $script:ProjectRoot
     try {
         & uv @syncArgs
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Environment synchronization completed with $extraToInstall support"
-        } else {
-            Write-Error "Environment synchronization failed"
-            exit 1
-        }
-    } catch {
-        Write-Error "Environment synchronization failed: $_"
-        exit 1
-    }
-}
-
-# 安装并构建 architecture_lab 前端
-function Setup-Frontend {
-    param(
-        [string]$FrontendPath = (Join-Path $script:PROJECT_ROOT "architecture_lab/frontend"),
-        [string]$NodeCommandName = "node",
-        [string]$NpmCommandName = "npm"
-    )
-
-    $packageJsonPath = Join-Path $FrontendPath "package.json"
-    if (-not (Test-Path $packageJsonPath)) {
-        Write-Warning "Frontend project not found at '$FrontendPath', skipping frontend setup."
-        return
-    }
-
-    $nodeCommand = Get-Command $NodeCommandName -ErrorAction SilentlyContinue
-    $npmCommand = Get-Command $NpmCommandName -ErrorAction SilentlyContinue
-    if (-not $nodeCommand -or -not $npmCommand) {
-        Write-Warning "Node.js or npm is unavailable, skipping frontend dependency installation and build."
-        return
-    }
-
-    Write-Running "Installing frontend dependencies in '$FrontendPath'..."
-    Push-Location $FrontendPath
-    try {
-        & $NpmCommandName install
         if ($LASTEXITCODE -ne 0) {
-            throw "npm install failed with exit code $LASTEXITCODE"
+            Write-FailureLine "Environment synchronization failed."
+            return
         }
-
-        Write-Running "Building frontend project..."
-        & $NpmCommandName run build
-        if ($LASTEXITCODE -ne 0) {
-            throw "npm run build failed with exit code $LASTEXITCODE"
-        }
-
-        Write-Success "Frontend dependencies installed and build completed"
-    } catch {
-        Write-Error "Frontend setup failed: $_"
-        exit 1
     } finally {
         Pop-Location
     }
-}
 
-# 主函数
-function Main {
-    Write-Host ""
-    Write-Host "  ███╗   ███╗ ██╗ ███╗   ██╗ ██╗        ██╗      ██╗      ███╗   ███╗" -ForegroundColor Magenta
-    Write-Host "  ████╗ ████║ ██║ ████╗  ██║ ██║        ██║      ██║      ████╗ ████║" -ForegroundColor Magenta
-    Write-Host "  ██╔████╔██║ ██║ ██╔██╗ ██║ ██║ █████╗ ██║      ██║      ██╔████╔██║" -ForegroundColor Magenta
-    Write-Host "  ██║╚██╔╝██║ ██║ ██║╚██╗██║ ██║ ╚════╝ ██║      ██║      ██║╚██╔╝██║" -ForegroundColor Magenta
-    Write-Host "  ██║ ╚═╝ ██║ ██║ ██║ ╚████║ ██║        ███████╗ ███████╗ ██║ ╚═╝ ██║" -ForegroundColor Magenta
-    Write-Host "  ╚═╝     ╚═╝ ╚═╝ ╚═╝  ╚═══╝ ╚═╝        ╚══════╝ ╚══════╝ ╚═╝     ╚═╝" -ForegroundColor Magenta
-    Write-Host ""
-    Write-Host "======================= Running Setup Script =======================" -ForegroundColor Magenta
-    Write-Host ""
-    
-    Start-Sleep -Seconds 1
-    
-    # 1. 检测系统环境
-    Write-Phase "1. Detecting System Environment..."
-    Get-SystemInfo
-    Get-CudaInfo
-    Get-GpuInfo
-    Show-DetectionSummary
-    
-    # 2. 安装uv
-    Write-Phase "2. Installing uv..."
-    Get-UvInstallation
-    if (-not $script:UV_AVAILABLE) {
-        Install-Uv
-    } else {
-        Write-Success "uv is already installed, version: $script:DETECTED_UV_VERSION"
+    Write-InfoLine "Verifying the installed Python environment..."
+    & $script:VenvPython $script:SetupHelper verify-main
+    if ($LASTEXITCODE -ne 0) {
+        Write-FailureLine "The environment was installed, but the import verification failed."
+        return
     }
-    
-    # 3. 使用uv同步环境
-    Write-Phase "3. Synchronizing Environment..."
-    Sync-Environment
-    
-    # 4. 额外配置
-    Write-Phase "4. Additional Configuration..."
-    Setup-Frontend
-    
-    # 配置结束
-    Write-Host ""
-    Write-Info "You can use 'uv cache clean' to clean the uv cache if needed."
-    Write-Success "Environment setup complete! $SUCCESS_MARK"
+    Write-SuccessLine "Main environment installation completed."
+    $script:ActionSucceeded = $true
 }
 
-# 运行主函数
+
+function Test-NodeVersion {
+    param([version]$Version)
+    if ($Version.Major -eq 20) {
+        return $Version -ge [version]"20.19.0"
+    }
+    return $Version -ge [version]"22.12.0"
+}
+
+
+function Install-Frontend {
+    Write-Section "Frontend"
+    if (-not (Test-Path (Join-Path $script:FrontendPath "package.json"))) {
+        Write-FailureLine "Architecture Lab frontend was not found at $script:FrontendPath"
+        return
+    }
+    if (-not (Confirm-Action "Install and build the Architecture Lab frontend?" $true)) {
+        Write-InfoLine "Frontend installation cancelled."
+        return
+    }
+
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+    if (-not $node -or -not $npm) {
+        Write-FailureLine "Node.js or npm is not available."
+        Write-InfoLine "Install Node.js 20.19+ or 22.12+, then run this option again."
+        return
+    }
+
+    try {
+        $nodeText = ((& node --version) -replace '^v', '').Split('-')[0]
+        $nodeVersion = [version]$nodeText
+    } catch {
+        Write-FailureLine "Unable to parse the installed Node.js version."
+        return
+    }
+    if (-not (Test-NodeVersion $nodeVersion)) {
+        Write-FailureLine "Node.js $nodeVersion does not satisfy Vite's requirement."
+        Write-InfoLine "Install Node.js 20.19+ or 22.12+. Node.js is not installed automatically."
+        return
+    }
+
+    Write-InfoLine "Node.js: $nodeVersion"
+    Write-InfoLine "npm: $(& npm --version)"
+    Push-Location $script:FrontendPath
+    try {
+        Write-Host "  > npm ci" -ForegroundColor DarkGray
+        & npm ci
+        if ($LASTEXITCODE -ne 0) {
+            Write-FailureLine "npm ci failed."
+            return
+        }
+        Write-Host "  > npm run build" -ForegroundColor DarkGray
+        & npm run build
+        if ($LASTEXITCODE -ne 0) {
+            Write-FailureLine "Frontend build failed."
+            return
+        }
+    } finally {
+        Pop-Location
+    }
+    Write-SuccessLine "Architecture Lab frontend installation completed."
+    $script:ActionSucceeded = $true
+}
+
+
+function Get-FlashEnvironment {
+    if (-not (Test-Path $script:VenvPython) -or -not (Test-Path $script:SetupHelper)) {
+        return $null
+    }
+    try {
+        $output = & $script:VenvPython $script:SetupHelper flash-environment 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+        return (($output | Select-Object -Last 1) | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+
+function Find-FlashWheel {
+    try {
+        $output = & $script:VenvPython $script:SetupHelper find-flash-wheel 2>&1
+        return (($output | Select-Object -Last 1) | ConvertFrom-Json)
+    } catch {
+        return [PSCustomObject]@{ found = $false; error = $_.Exception.Message }
+    }
+}
+
+
+function Install-FlashBuildDependencies {
+    Write-InfoLine "Installing flash-attn Python build dependencies..."
+    & uv pip install --python $script:VenvPython --index-url https://pypi.org/simple einops packaging psutil ninja setuptools wheel
+    return $LASTEXITCODE -eq 0
+}
+
+
+function Test-FlashAttention {
+    & $script:VenvPython $script:SetupHelper test-flash-attention
+    return $LASTEXITCODE -eq 0
+}
+
+
+function Install-FlashFromSource {
+    param([PSCustomObject]$Environment)
+
+    $nvcc = Get-Command nvcc -ErrorAction SilentlyContinue
+    if (-not $nvcc) {
+        Write-FailureLine "nvcc was not found. Install a CUDA Toolkit matching PyTorch CUDA $($Environment.cuda)."
+        return
+    }
+    $nvccOutput = (& nvcc --version 2>&1) -join "`n"
+    $nvccMatch = [regex]::Match($nvccOutput, "release\s+(\d+)\.(\d+)")
+    if (-not $nvccMatch.Success) {
+        Write-FailureLine "Unable to determine the local CUDA Toolkit version from nvcc."
+        return
+    }
+    if ($nvccMatch.Groups[1].Value -ne $Environment.cuda_major) {
+        Write-FailureLine "nvcc CUDA $($nvccMatch.Groups[1].Value).$($nvccMatch.Groups[2].Value) does not match PyTorch CUDA $($Environment.cuda)."
+        return
+    }
+    if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+        Write-FailureLine "MSVC cl.exe was not found. Run setup.ps1 from a Visual Studio Developer PowerShell."
+        return
+    }
+    if (-not (Install-FlashBuildDependencies)) {
+        Write-FailureLine "Failed to install flash-attn build dependencies."
+        return
+    }
+
+    $oldMaxJobs = $env:MAX_JOBS
+    $oldNvccThreads = $env:NVCC_THREADS
+    $env:MAX_JOBS = "2"
+    $env:NVCC_THREADS = "1"
+    try {
+        Write-InfoLine "Compiling flash-attn with MAX_JOBS=$env:MAX_JOBS and NVCC_THREADS=$env:NVCC_THREADS. This may take a long time."
+        & uv pip install --python $script:VenvPython --index-url https://pypi.org/simple --reinstall --no-deps --no-build-isolation --no-binary flash-attn "flash-attn>=2,<3"
+        if ($LASTEXITCODE -ne 0) {
+            Write-FailureLine "flash-attn source compilation failed."
+            return
+        }
+    } finally {
+        $env:MAX_JOBS = $oldMaxJobs
+        $env:NVCC_THREADS = $oldNvccThreads
+    }
+
+    if (Test-FlashAttention) {
+        Write-SuccessLine "flash-attn source build completed."
+        $script:ActionSucceeded = $true
+    } else {
+        Write-FailureLine "flash-attn was built, but runtime verification failed."
+    }
+}
+
+
+function Install-FlashAttention {
+    Write-Section "flash-attn"
+    if (-not (Ensure-Uv)) {
+        return
+    }
+
+    $environment = Get-FlashEnvironment
+    if (-not $environment) {
+        Write-FailureLine "The main environment is missing or could not be inspected."
+        Write-InfoLine "Run menu option 1 before installing flash-attn."
+        return
+    }
+    if (-not $environment.ready) {
+        Write-FailureLine "flash-attn is not supported by the current environment: $($environment.reason)"
+        return
+    }
+
+    Write-InfoLine "GPU: $($environment.gpu) (SM $($environment.capability))"
+    Write-InfoLine "Python: $($environment.python) | Torch: $($environment.torch) | CUDA: $($environment.cuda) | CXX11 ABI: $($environment.abi)"
+    Write-InfoLine "Searching official flash-attention release assets..."
+    $wheel = Find-FlashWheel
+
+    if ($wheel.found) {
+        Write-SuccessLine "Found $($wheel.name)"
+        if (-not (Install-FlashBuildDependencies)) {
+            Write-FailureLine "Failed to install flash-attn runtime dependencies."
+            return
+        }
+        Write-Host "  > uv pip install --reinstall --no-deps <wheel>" -ForegroundColor DarkGray
+        & uv pip install --python $script:VenvPython --reinstall --no-deps $wheel.url
+        if ($LASTEXITCODE -eq 0 -and (Test-FlashAttention)) {
+            Write-SuccessLine "flash-attn wheel installation completed."
+            $script:ActionSucceeded = $true
+            return
+        }
+        Write-WarningLine "The matching wheel could not be installed or loaded."
+    } elseif ($wheel.error) {
+        Write-WarningLine "Unable to query GitHub releases: $($wheel.error)"
+    } else {
+        Write-WarningLine "No compatible prebuilt wheel was found."
+        Write-InfoLine $wheel.reason
+    }
+
+    Write-WarningLine "Source compilation can take a long time and use substantial CPU and memory."
+    Write-WarningLine "For a more reliable flash-attn installation, Linux or WSL is recommended."
+    if (Confirm-Action "Compile flash-attn from source now?") {
+        Install-FlashFromSource $environment
+    } else {
+        Write-InfoLine "flash-attn installation cancelled. The Triton backend remains available."
+    }
+}
+
+
+function Invoke-MenuAction {
+    param([scriptblock]$Action)
+    $script:ActionSucceeded = $false
+    try {
+        & $Action
+    } catch {
+        Write-FailureLine "Unexpected error: $_"
+    }
+    if ($script:ActionSucceeded) {
+        $script:ComponentStatus = Get-ComponentStatus
+    }
+    Pause-Menu
+}
+
+
+function Main {
+    while ($true) {
+        Show-Menu
+        $choice = Read-Host
+        switch ($choice.Trim().ToLowerInvariant()) {
+            "1" { Invoke-MenuAction { Install-MainEnvironment } }
+            "2" { Invoke-MenuAction { Install-Frontend } }
+            "3" { Invoke-MenuAction { Install-FlashAttention } }
+            "q" { Write-Host "Exiting..." -ForegroundColor Yellow; exit 0 }
+            "" { Write-Host "Exiting..." -ForegroundColor Yellow; exit 0 }
+            default {
+                Write-WarningLine "Invalid option: $choice"
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+}
+
+
 Main

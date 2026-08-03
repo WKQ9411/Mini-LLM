@@ -181,12 +181,10 @@ class MiniQwen3NextDecoderLayer(nn.Module):
                 layer_idx=layer_idx,
                 hidden_size=config.hidden_size,
                 num_attention_heads=config.num_attention_heads,
-                rope_theta=config.rope_theta,
                 num_key_value_heads=config.num_key_value_heads,
                 head_dim=config.head_dim,
                 attention_bias=config.attention_bias,
                 rms_norm_eps=config.rms_norm_eps,
-                flash_attention=config.flash_attention,
                 )
 
         # feedforward
@@ -252,6 +250,10 @@ class MiniQwen3NextPreTrainedModel(PreTrainedModel):
     config: MiniQwen3NextConfig  # 用于类型标注(type hint)
     base_model_prefix = "model"  # 定义模型主干模块的属性名
     config_class = MiniQwen3NextConfig  # 用于 transformers 框架的模型注册机制，类属性(class level)
+
+    @classmethod
+    def _supports_default_dynamic_cache(cls) -> bool:
+        return False  # 当前模型不使用 Transformers 自动创建的标准 DynamicCache
     
     @torch.no_grad()
     def _init_weights(self, module):
@@ -298,8 +300,7 @@ class MiniQwen3NextModel(MiniQwen3NextPreTrainedModel):
         self.rotary_emb = RotaryEmbedding(
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.head_dim,
-            rope_theta=config.rope_theta,
-            rope_scaling=config.rope_scaling,
+            rope_parameters=config.rope_parameters,
         )
         
         # 调用父类方法，其中主要会进行：
@@ -370,7 +371,6 @@ class MiniQwen3NextModel(MiniQwen3NextPreTrainedModel):
             self.config,
             inputs_embeds,
             attention_mask=attention_mask,
-            cache_position=cache_position,
             past_key_values=past_key_values,
             position_ids=position_ids,
         )

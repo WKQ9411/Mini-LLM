@@ -283,7 +283,6 @@ class MiniDeepSeekV3DecoderLayer(nn.Module):
             v_head_dim=config.v_head_dim,
             attention_bias=config.attention_bias,
             attn_impl=config.attn_impl,
-            flash_attention=config.flash_attention,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -365,8 +364,7 @@ class MiniDeepSeekV3Model(MiniDeepSeekV3PreTrainedModel):
         self.rotary_emb = RotaryEmbedding(
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.qk_rope_head_dim,
-            rope_theta=config.rope_theta,
-            rope_scaling=config.rope_scaling,
+            rope_parameters=config.rope_parameters,
         )
 
         # 调用父类方法，其中主要会进行：
@@ -442,7 +440,6 @@ class MiniDeepSeekV3Model(MiniDeepSeekV3PreTrainedModel):
             self.config,
             inputs_embeds,
             attention_mask=attention_mask,
-            cache_position=cache_position,
             past_key_values=past_key_values,
             position_ids=position_ids,
         )
@@ -521,8 +518,7 @@ class MiniDeepSeekV3MTP(nn.Module):
         self.rotary_emb = RotaryEmbedding(
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.qk_rope_head_dim,
-            rope_theta=config.rope_theta,
-            rope_scaling=config.rope_scaling,
+            rope_parameters=config.rope_parameters,
         )
     
     def forward(
@@ -578,7 +574,7 @@ class MiniDeepSeekV3MTP(nn.Module):
 
 # mini_deepseekv3 因果语言模型
 class MiniDeepSeekV3ForCausalLM(MiniDeepSeekV3PreTrainedModel, GenerationMixin):
-    _tied_weights_keys = ["lm_head.weight"]  # 声明需要共享的权重
+    _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}  # 声明需要共享的权重
     architecture_type = "MoE"  # 自定义字段
 
     def __init__(self, config: MiniDeepSeekV3Config):
@@ -590,15 +586,11 @@ class MiniDeepSeekV3ForCausalLM(MiniDeepSeekV3PreTrainedModel, GenerationMixin):
 
         # 如果使用 MTP，需要声明共享的权重
         if self.mtp is not None:
-            if not hasattr(self, '_dynamic_tied_weights_keys'):
-                self._dynamic_tied_weights_keys = []
-            # 添加共享关系
-            self._dynamic_tied_weights_keys = [
-                "model.embed_tokens.weight",
-                "mtp.embed_tokens.weight",
-                "lm_head.weight",
-                "mtp.lm_head.weight",
-            ]
+            self._tied_weights_keys = {
+                **type(self)._tied_weights_keys,
+                "mtp.embed_tokens.weight": "model.embed_tokens.weight",
+                "mtp.lm_head.weight": "lm_head.weight",
+            }
         
         self.post_init()
     
@@ -616,8 +608,8 @@ class MiniDeepSeekV3ForCausalLM(MiniDeepSeekV3PreTrainedModel, GenerationMixin):
             del self.mtp
             self.mtp = None
             self.config.use_mtp = False
-            if hasattr(self, '_dynamic_tied_weights_keys'):
-                del self._dynamic_tied_weights_keys
+            self._tied_weights_keys = type(self)._tied_weights_keys.copy()
+            self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
     
     def forward(
         self,

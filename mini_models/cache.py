@@ -128,21 +128,20 @@ class MiniQwen3NextDynamicCache:
             return 0
         return self.key_cache[layer_idx].shape[-2]
 
-    def get_mask_sizes(self, cache_position: torch.Tensor, layer_idx: int) -> tuple[int, int]:
+    def get_mask_sizes(self, query_length: int, layer_idx: int) -> tuple[int, int]:
         """
         此函数用于计算注意力掩码的长度 kv_length 和偏移量 kv_offset
         - kv_length 表示当前 kv cache 的总长度, 即当前输出长度 + 历史缓存长度
         - kv_offset 表示 kv cache 的起始位置偏移量, 一般在类似滑动窗口注意力等场景下会用到, 这里固定为 0
         
         Args:
-            cache_position (torch.Tensor): cache_position 是当前输入序列的位置索引，索引范围为 [past_seen_tokens, past_seen_tokens + query_length], 形状为 (query_length,)
+            query_length (int): 当前输入序列长度
             layer_idx (int): 指定层的索引
         
         Returns:
             tuple[int, int]: kv_length 和 kv_offset 组成的元组
         """
         kv_offset = 0
-        query_length = cache_position.shape[0]
         past_seen_tokens = self.get_seq_length(layer_idx)
         kv_length = query_length + past_seen_tokens
         return kv_length, kv_offset

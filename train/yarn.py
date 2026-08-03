@@ -131,7 +131,7 @@ def train_process(local_rank, rank, world_size, args):
         config = Config.from_pretrained(args.resume_from_checkpoint)
         if is_main_process:
             print("Model config loaded from checkpoint")
-            print(f"rope_scaling:\n{config.rope_scaling}")
+            print(f"rope_parameters:\n{config.rope_parameters}")
         # 根据读取的 config 初始化 model 实例
         model = Model(config).to(device)
     else:
@@ -141,20 +141,21 @@ def train_process(local_rank, rank, world_size, args):
         # 获取预训练模型的原最大序列长度
         original_max_position_embeddings = config.max_position_embeddings
         # 配置 YaRN 参数
-        rope_scaling = {
+        rope_parameters = {
             "rope_type": "yarn",  # 默认为 yarn
+            "rope_theta": config.rope_parameters["rope_theta"],
             "factor": args.max_seq_len / original_max_position_embeddings,
             "attention_factor": None,  # 默认为 None，内部自动计算
             "beta_fast": args.yarn_beta,
             "beta_slow": args.yarn_alpha,
         }
         config.max_position_embeddings = args.max_seq_len  # 更新模型的最大位置编码长度
-        config.rope_scaling = rope_scaling  # 将 YaRN 配置添加到模型配置中
+        config.rope_parameters = rope_parameters  # 将 YaRN 配置添加到模型配置中
 
         model = Model.from_pretrained(args.base_model_path, config=config).to(device)
         if is_main_process:
             print(f"Loading pretrained model weights from: {args.base_model_path}")
-            print(f"rope_scaling:\n{config.rope_scaling}")
+            print(f"rope_parameters:\n{config.rope_parameters}")
 
     # 计算学习率迭代次数参数
     iter_per_epoch = len(dataloader)

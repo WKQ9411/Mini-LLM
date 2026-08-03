@@ -1,0 +1,10 @@
+# Normalize text files in the Git index while preserving binary files.
+* text=auto
+
+# Unix scripts must use LF so they run correctly on Linux and WSL.
+*.sh text eol=lf
+
+# Windows scripts use CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

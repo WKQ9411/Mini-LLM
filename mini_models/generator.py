@@ -179,27 +179,22 @@ class Generator:
         input_ids = input_ids.to(self.model.device)
 
         # --- 生成循环 ---
-        # 1) prefill 阶段，将 input_ids 一次性输入，前向传播的过程中会将前 seq_len-1 个 token 的 KV 加入到模型的 cache 中，mask 在模型内部实现
+        # 1) prefill 阶段一次性处理完整 prompt，将全部 prompt token 写入 KV Cache，
+        #    并使用最后一个位置的 logits 产生首个生成 token
         outputs: CausalLMOutputWithPast = self.model(
-            input_ids=input_ids[:, :-1],
+            input_ids=input_ids,
             use_cache=True,
-            )
+            logits_to_keep=1,
+        )
         past_key_values = outputs.past_key_values
+        next_token_logits = outputs.logits[:, -1, :]  # (1, vocab_size)
 
-        # 2) decode 阶段，从 input_ids 的最后一个 token 开始，每次只输入一个 token，将当前 token 的 KV 补到 cache 中，并预测下一个 token
+        # 2) 首 token 直接由 prefill logits 采样；后续 token 才进入单 token decode
         generated_tokens = []  # 收集已生成的 token ids
         decoded_tokens = []  # 记录已经成功解码的 token ids，用于增量解码
-        input_ids = input_ids[:, [-1]]  # (1, 1)
         yielded_text = ""  # 记录已经 yield 出去的文本
 
-        for _ in range(max_new_tokens):
-            outputs: CausalLMOutputWithPast = self.model(
-                input_ids=input_ids,
-                use_cache=True,
-                past_key_values=past_key_values,
-            )
-            next_token_logits = outputs.logits[:, -1, :]  # (1, vocab_size)
-
+        for step in range(max_new_tokens):
             # 在 temperature 和 top-k/p 之前应用重复惩罚或频率惩罚
             if repetition_penalty > 1.0:
                 next_token_logits = self._apply_repetition_penalty(
@@ -226,9 +221,10 @@ class Generator:
                 probs = F.softmax(next_token_logits, dim=-1)  # (1, vocab_size)
                 next_token_id = torch.multinomial(probs, num_samples=1)  # (1, 1)
 
-            if next_token_id.item() == self.tokenizer.eos_token_id:
+            next_token = next_token_id.item()
+            if next_token == self.tokenizer.eos_token_id:
                 break
-            generated_tokens.append(next_token_id.item())
+            generated_tokens.append(next_token)
 
             # 对于多字节编码（如 UTF-8 中的中文、emoji 等），单个 token id 可能只代表字符的一部分。
             # 直接解码单个 token id 可能会产生无效字符或 unicode 替换符（例如 �），因此需要累计直到能够完整解码一个 token 才 yield
@@ -253,4 +249,14 @@ class Generator:
                 yield new_text_chunk
                 yielded_text = current_decoded_text  # 更新已 yield 文本
 
-            input_ids = next_token_id
+            if step == max_new_tokens - 1:
+                break
+
+            outputs = self.model(
+                input_ids=next_token_id,
+                use_cache=True,
+                past_key_values=past_key_values,
+                logits_to_keep=1,
+            )
+            past_key_values = outputs.past_key_values
+            next_token_logits = outputs.logits[:, -1, :]

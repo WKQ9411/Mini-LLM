@@ -1,117 +1,88 @@
-from transformers import PretrainedConfig
+from huggingface_hub.dataclasses import strict
+from transformers import PreTrainedConfig
+from transformers.modeling_rope_utils import RopeParameters
 
 
-class MiniDeepSeekV3Config(PretrainedConfig):
+@strict
+class MiniDeepSeekV3Config(PreTrainedConfig):
     """
     mini_deepseekv3 模型配置参数
 
     Attributes:
-        max_seq_len (int): 最大序列长度
         vocab_size (int): 词典大小
-        dim (int): 嵌入维度
-        inter_dim (int): MLP层的中间维度
-        moe_inter_dim (int): MoE层专家的中间维度
-        n_layers (int): Transformer层的数量
-        n_dense_layers (int): 模型中密集层的数量, 前几层负载均衡收敛慢, 因此设置为密集层
-        n_heads (int): 注意力头数
-        n_routed_experts (int): MoE层中路由的专家数量
-        n_shared_experts (int): MoE层中共享的专家数量
-        n_activated_experts (int): MoE层中激活的专家数量
-        n_expert_groups (int): 专家的分组数量
-        n_limited_groups (int): 路由限制, 每次最多从限制的专家组里选择专家
-        route_scale (float): 路由权重的缩放因子
-        use_noaux_load_balance (bool): 是否使用无辅助损失的负载均衡策略
-        bias_update_speed (float): 偏置更新速度
-        use_seq_aux (bool): 是否使用序列级别的辅助损失
-        seq_aux_alpha (float): 序列级别的辅助损失的权重
-        q_lora_rank (int): query 的下投影维度【对应论文中的 d_c'】
-        kv_lora_rank (int): key/value 的下投影维度【对应论文中的 d_c】
-        qk_nope_head_dim (int): 没有位置编码的 q_t^C 和 k_t^C 的每个头的维度【对应论文中的 d_h】
-        qk_rope_head_dim (int): 解耦的带 RoPE 的 q_t^R 和 k_t^R 的每个头的维度【对应论文中的 d_h^R】
-        v_head_dim (int): value 的每个头的维度, 可以与 qk_nope_head_dim 不同【但在论文中也同样设定为 d_h】
-        rope_theta (float): 旋转位置编码的基底【即 θ_d=b^(-2d/D) 中的 b】
-        rope_scaling (dict): ROPE 缩放参数
-        use_mtp (bool): 是否使用 MTP 策略
-        mtp_loss_lambda (float): MTP 损失的权重
+        hidden_size (int): 隐藏层维度
+        intermediate_size (int): Dense MLP 中间维度
+        moe_intermediate_size (int): MoE 专家的中间维度
+        num_hidden_layers (int): Transformer 层数
+        num_dense_layers (int): 模型前部使用 Dense MLP 的层数
+        num_attention_heads (int): 注意力头数
+        attn_impl (str): MLA 推理实现，支持 naive 或 absorb
+        attention_bias (bool): 注意力投影是否使用偏置
+        max_position_embeddings (int): 最大位置编码长度
+        rms_norm_eps (float): RMSNorm 的 epsilon
+        n_routed_experts (int): MoE 路由专家数量
+        n_shared_experts (int): MoE 共享专家数量
+        n_activated_experts (int): 每个 token 激活的路由专家数量
+        n_expert_groups (int): 路由专家分组数量
+        n_limited_groups (int): 每个 token 最多选择的专家组数量
+        route_scale (float): 路由权重缩放因子
+        use_noaux_load_balance (bool): 是否使用无辅助损失负载均衡策略
+        bias_update_speed (float): 无辅助损失负载均衡偏置的更新速度
+        use_seq_aux (bool): 是否使用序列级负载均衡辅助损失
+        seq_aux_alpha (float): 序列级负载均衡辅助损失系数
+        q_lora_rank (int): Query 低秩压缩维度
+        kv_lora_rank (int): Key/Value 低秩压缩维度
+        qk_nope_head_dim (int): Query/Key 中不应用 RoPE 部分的每头维度
+        qk_rope_head_dim (int): Query/Key 中应用 RoPE 部分的每头维度
+        v_head_dim (int): Value 的每头维度
+        rope_parameters (dict): RoPE 参数，包含 rope_theta 和可选缩放参数
+        use_mtp (bool): 是否启用 Multi-Token Prediction 模块
+        mtp_loss_lambda (float): MTP 损失系数
+        pad_token_id (int): Padding token ID
+        bos_token_id (int): 序列开始 token ID
+        eos_token_id (int | list[int]): 序列结束 token ID
+        tie_word_embeddings (bool): 是否共享输入词嵌入与输出投影权重
     """
+
     model_type = "mini_deepseekv3"
 
-    def __init__(
-        self,
-        # ---- 通用 ----
-        vocab_size: int = -1,  # 加载时覆盖
-        hidden_size: int = 768,
-        intermediate_size: int = 3072,
-        moe_intermediate_size: int = 512,
-        num_hidden_layers: int = 12,
-        num_dense_layers: int = 3,
-        num_attention_heads: int = 12,
-        attn_impl: str = "absorb",
-        flash_attention: bool = False,
-        attention_bias: bool = False,
-        max_position_embeddings: int = 512,
-        rms_norm_eps: float = 1e-6,
-        # ---- MoE ----
-        n_routed_experts: int = 8,
-        n_shared_experts: int = 1,
-        n_activated_experts: int = 2,
-        n_expert_groups: int = 4,
-        n_limited_groups: int = 2,
-        route_scale: float = 1.0,
-        use_noaux_load_balance: bool = True,
-        bias_update_speed: float = 0.001,
-        use_seq_aux: bool = True,
-        seq_aux_alpha: float = 0.0001,
-        # ---- MLA ----
-        q_lora_rank: int = 384,  # 源码中若 q_lora_rank=0, 则不使用下投影，这里我们使用下投影，并略去若 q_lora_rank=0 的逻辑
-        kv_lora_rank: int = 256,  # 论文中 d_c = 4 * d_h
-        qk_nope_head_dim: int = 64,  # d_h
-        qk_rope_head_dim: int = 32,  # 论文中 d_h^R = d_h / 2
-        v_head_dim: int = 64,
-        # ---- RoPE ----
-        rope_theta: float = 10000.0,
-        rope_scaling: dict = None,
-        # ---- MTP ----
-        use_mtp: bool = True,
-        mtp_loss_lambda: float = 0.0001,
-        # ---- 父类通用字段 ----
-        **kwargs
-        ):
-        self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
-        self.intermediate_size = intermediate_size
-        self.moe_intermediate_size = moe_intermediate_size
-        self.num_hidden_layers = num_hidden_layers
-        self.num_dense_layers = num_dense_layers
-        self.num_attention_heads = num_attention_heads
-        self.attn_impl = attn_impl
-        self.flash_attention = flash_attention
-        self.attention_bias = attention_bias
-        self.max_position_embeddings = max_position_embeddings
-        self.rms_norm_eps = rms_norm_eps
+    vocab_size: int = -1
+    hidden_size: int = 768
+    intermediate_size: int = 3072
+    moe_intermediate_size: int = 512
+    num_hidden_layers: int = 12
+    num_dense_layers: int = 3
+    num_attention_heads: int = 12
+    attn_impl: str = "absorb"
+    attention_bias: bool = False
+    max_position_embeddings: int = 512
+    rms_norm_eps: float = 1e-6
 
-        self.n_routed_experts = n_routed_experts
-        self.n_shared_experts = n_shared_experts
-        self.n_activated_experts = n_activated_experts
-        self.n_expert_groups = n_expert_groups
-        self.n_limited_groups = n_limited_groups
-        self.route_scale = route_scale
-        self.use_noaux_load_balance = use_noaux_load_balance
-        self.bias_update_speed = bias_update_speed
-        self.use_seq_aux = use_seq_aux
-        self.seq_aux_alpha = seq_aux_alpha
+    n_routed_experts: int = 8
+    n_shared_experts: int = 1
+    n_activated_experts: int = 2
+    n_expert_groups: int = 4
+    n_limited_groups: int = 2
+    route_scale: float = 1.0
+    use_noaux_load_balance: bool = True
+    bias_update_speed: float = 0.001
+    use_seq_aux: bool = True
+    seq_aux_alpha: float = 0.0001
 
-        self.q_lora_rank = q_lora_rank
-        self.kv_lora_rank = kv_lora_rank
-        self.qk_nope_head_dim = qk_nope_head_dim
-        self.qk_rope_head_dim = qk_rope_head_dim
-        self.v_head_dim = v_head_dim
+    q_lora_rank: int = 384
+    kv_lora_rank: int = 256
+    qk_nope_head_dim: int = 64
+    qk_rope_head_dim: int = 32
+    v_head_dim: int = 64
 
-        self.rope_theta = rope_theta
-        self.rope_scaling = rope_scaling
-        
-        self.use_mtp = use_mtp
-        self.mtp_loss_lambda = mtp_loss_lambda
+    rope_parameters: RopeParameters | dict | None = None
 
-        # 父类初始化
-        super().__init__(**kwargs)
+    use_mtp: bool = True
+    mtp_loss_lambda: float = 0.0001
+    pad_token_id: int | None = None
+    bos_token_id: int | None = None
+    eos_token_id: int | list[int] | None = None
+    tie_word_embeddings: bool = True
+
+    def __post_init__(self, **kwargs):
+        super().__post_init__(**kwargs)

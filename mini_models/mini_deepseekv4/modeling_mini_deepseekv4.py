@@ -291,7 +291,11 @@ class MiniDeepSeekV4DecoderLayer(nn.Module):
         self.hc_eps = config.hc_eps
         self.rms_norm_eps = config.rms_norm_eps
         self.layer_type = config.layer_types[layer_idx]
-        self.rope_theta = config.rope_theta if self.layer_type == "sliding_attention" else config.compress_rope_theta
+        self.rope_theta = (
+            config.rope_parameters["rope_theta"]
+            if self.layer_type == "sliding_attention"
+            else config.compress_rope_theta
+        )
         self.rotary_emb = RotaryEmbedding(
             max_position_embeddings=config.max_position_embeddings,
             head_dim=config.rope_head_dim,
@@ -524,6 +528,10 @@ class MiniDeepSeekV4PreTrainedModel(PreTrainedModel):
     base_model_prefix = "model"  # 定义模型主干模块的属性名
     config_class = MiniDeepSeekV4Config  # 用于 transformers 框架的模型注册机制，类属性(class level)
 
+    @classmethod
+    def _supports_default_dynamic_cache(cls) -> bool:
+        return False  # 当前模型不使用 Transformers 自动创建的标准 DynamicCache
+
     @torch.no_grad()
     def _init_weights(self, module: nn.Module):
         super()._init_weights(module)  # 调用 PreTrainedModel 类的初始化方法
@@ -626,7 +634,6 @@ class MiniDeepSeekV4Model(MiniDeepSeekV4PreTrainedModel):
             self.config,
             inputs_embeds,
             attention_mask=attention_mask,
-            cache_position=cache_position,
             past_key_values=past_key_values,
             position_ids=position_ids,
         )
@@ -721,7 +728,6 @@ class MiniDeepSeekV4MTP(nn.Module):
             self.config,
             inputs_embeds,
             attention_mask=attention_mask,
-            cache_position=cache_position,
             past_key_values=None,
             position_ids=position_ids,
         )
@@ -753,12 +759,11 @@ class MiniDeepSeekV4ForCausalLM(MiniDeepSeekV4PreTrainedModel, GenerationMixin):
 
         # 如果使用 MTP，需要声明共享的权重
         if self.mtp is not None:
-            self._dynamic_tied_weights_keys = [
-                "model.embed_tokens.weight",
-                "mtp.embed_tokens.weight",
-                "lm_head.weight",
-                "mtp.lm_head.weight",
-            ]
+            self._tied_weights_keys = {
+                **type(self)._tied_weights_keys,
+                "mtp.embed_tokens.weight": "model.embed_tokens.weight",
+                "mtp.lm_head.weight": "lm_head.weight",
+            }
 
         self.post_init()
 
@@ -776,8 +781,8 @@ class MiniDeepSeekV4ForCausalLM(MiniDeepSeekV4PreTrainedModel, GenerationMixin):
             del self.mtp
             self.mtp = None
             self.config.use_mtp = False
-            if hasattr(self, "_dynamic_tied_weights_keys"):
-                del self._dynamic_tied_weights_keys
+            self._tied_weights_keys = type(self)._tied_weights_keys.copy()
+            self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
 
     def forward(
         self,

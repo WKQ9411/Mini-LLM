@@ -113,7 +113,7 @@ def apply_rotary_emb(x: torch.Tensor, position_embeddings: Tuple[torch.Tensor, t
 # 计算 YaRN 逆频率和注意力缩放参数
 def compute_yarn_parameters(
     rope_theta: float, 
-    rope_scaling: dict, 
+    rope_parameters: dict,
     head_dim: int, 
     max_position_embeddings: int
 ) -> Tuple[torch.Tensor, float]:
@@ -122,7 +122,7 @@ def compute_yarn_parameters(
 
     Args:
         rope_theta (float): RoPE 的底, 默认为 10000.0
-        rope_scaling (dict): ROPE 的缩放参数, 包括以下字段:
+        rope_parameters (dict): RoPE 参数, 包括以下字段:
             - rope_type (str): ROPE 扩展类型, 目前固定为 'yarn'
             - factor (float): 扩展倍数，即扩展后上下文长度/扩展前上下文长度，即论文中的 s
             - attention_factor (float, optional): 注意力缩放因子，即论文中的 √(1/t), 可以自定义, 默认为 None, 此时由 factor 计算得到
@@ -137,10 +137,10 @@ def compute_yarn_parameters(
     # 变量准备
     base = rope_theta
     dim = head_dim  # 默认全部维度使用 RoPE
-    factor = rope_scaling["factor"]  # 扩展倍数，即扩展后上下文长度/扩展前上下文长度，即论文中的 s
-    attention_factor = rope_scaling.get("attention_factor", None)  # 注意力缩放因子，即论文中的 √(1/t)，可以自定义，默认为 None，此时由 factor 计算得到
-    beta_fast = rope_scaling.get("beta_fast", 32)  # 论文中的 β，用于划分高频部分，默认为 32
-    beta_slow = rope_scaling.get("beta_slow", 1)  # 论文中的 α，用于划分低频部分，默认为 1
+    factor = rope_parameters["factor"]  # 扩展倍数，即扩展后上下文长度/扩展前上下文长度，即论文中的 s
+    attention_factor = rope_parameters.get("attention_factor", None)  # 注意力缩放因子，即论文中的 √(1/t)，可以自定义，默认为 None，此时由 factor 计算得到
+    beta_fast = rope_parameters.get("beta_fast", 32)  # 论文中的 β，用于划分高频部分，默认为 32
+    beta_slow = rope_parameters.get("beta_slow", 1)  # 论文中的 α，用于划分低频部分，默认为 1
     original_max_position_embeddings = max_position_embeddings / factor  # 扩展前的最大位置编码长度
 
     # 计算注意力缩放因子
@@ -223,37 +223,72 @@ class RotaryEmbedding(nn.Module):
         max_position_embeddings (int): 最大位置编码长度
         head_dim (int): 每个头的维度
         rope_theta (float): RoPE 的底数, 默认为 10000.0
-        rope_scaling (dict): ROPE 的缩放参数, 在经过 YaRN 训练后, 会固定到 config 里
+        rope_parameters (dict): RoPE 参数
     """
 
     inv_freq: torch.Tensor  # 用于类型标注(type hint)
 
-    def __init__(self, max_position_embeddings: int, head_dim: int, rope_theta: float = 10000.0, rope_scaling: dict = None):
+    def __init__(
+        self,
+        max_position_embeddings: int,
+        head_dim: int,
+        rope_theta: float = 10000.0,
+        rope_parameters: dict | None = None,
+    ):
         super().__init__()
 
-        # # NOTE: transformers 5.x 可能会在配置中附加一个默认的 rope_scaling 字典，如 {"rope_type": "default"}
-        # 我们这里只有明确的 YaRN 配置才应该进入 YaRN 路径
-        rope_type = None
-        if isinstance(rope_scaling, dict):
-            rope_type = rope_scaling.get("rope_type") or rope_scaling.get("type")
-        if isinstance(rope_scaling, dict) and (rope_type == "yarn" or "factor" in rope_scaling):
-            self.rope_type = "yarn"
-        else:
-            self.rope_type = "default"
+        rope_parameters = rope_parameters or {}
+        self.rope_type = rope_parameters.get("rope_type", "default")
+        if self.rope_type not in {"default", "yarn"}:
+            raise ValueError(f"Unsupported rope_type: {self.rope_type}")
         
         self.max_seq_len_cached = max_position_embeddings
         self.head_dim = head_dim
-        self.rope_theta = rope_theta
+        self.rope_theta = rope_parameters.get("rope_theta", rope_theta)
+        self.rope_parameters = rope_parameters
 
         if self.rope_type == "default":
-            inv_freq = 1.0 / (self.rope_theta ** (torch.arange(0, self.head_dim, 2, dtype=torch.float32) / self.head_dim))  # (head_dim//2,)
             self.attention_scaling = 1.0  # 不对注意力进行缩放
         else:
             # 计算 YaRN 逆频率和注意力缩放参数
-            inv_freq, self.attention_scaling = compute_yarn_parameters(rope_theta, rope_scaling, head_dim, max_position_embeddings)
+            _, self.attention_scaling = compute_yarn_parameters(
+                self.rope_theta,
+                self.rope_parameters,
+                head_dim,
+                max_position_embeddings,
+            )
         
         # 仅缓存 inv_freq，而不是 cos、sin，能够节省缓存，且支持动态适应
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self.register_buffer("inv_freq", self._create_inv_freq(), persistent=False)
+        self._inv_freq_initialized = False
+
+    def _create_inv_freq(self) -> torch.Tensor:
+        if self.rope_type == "default":
+            return 1.0 / (
+                self.rope_theta
+                ** (torch.arange(0, self.head_dim, 2, dtype=torch.float32) / self.head_dim)
+            )
+
+        inv_freq, _ = compute_yarn_parameters(
+            self.rope_theta,
+            self.rope_parameters,
+            self.head_dim,
+            self.max_seq_len_cached,
+        )
+        return inv_freq
+
+    def _ensure_inv_freq_initialized(self) -> None:
+        # NOTE: Transformers 5.x 的 from_pretrained() 为降低加载峰值内存，
+        # 先在 meta device 上构造模型，再将 checkpoint 中的参数和持久化 buffer 加载到目标设备，
+        # inv_freq 注册为 persistent=False，因此不会写入 checkpoint，也不会从权重恢复
+        # 对这类缺失的非持久化 buffer，5.x 通过 empty_like() 只分配实际存储空间
+        # 该操作能恢复其形状、类型和设备，却不会保留构造函数计算出的数值
+        # Transformers 会为符合官方接口的 RotaryEmbedding 重新计算这些 buffer，
+        # 但当前自定义实现不进入该特殊初始化分支，所以在首次前向传播前根据配置确定性重建
+        # 使用 copy_ 原位写回，可保留已注册 buffer 的身份以及加载流程确定的设备和类型
+        if not self._inv_freq_initialized:
+            self.inv_freq.copy_(self._create_inv_freq().to(device=self.inv_freq.device))
+            self._inv_freq_initialized = True
 
     @torch.no_grad()
     def forward(self, x: torch.Tensor, position_ids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -267,6 +302,8 @@ class RotaryEmbedding(nn.Module):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: 输出 cos、sin 表, 形状为 (batch, seq_len, head_dim)
         """
+        self._ensure_inv_freq_initialized()
+
         # 调整形状为后续外积计算做准备
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)  # (batch, head_dim//2, 1)
         position_ids_expanded = position_ids[:, None, :].float()  # (batch, 1, seq_len)
