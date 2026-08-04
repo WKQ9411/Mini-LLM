@@ -422,12 +422,10 @@ https://github.com/user-attachments/assets/919d3b61-0664-4f0b-ae33-e9565f57155c
 
 # Star History
 
-<div align="center">
-  <a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&legend=top-left">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
-    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=TZ82qR1OrnaEbUla28SEesPoeVy8u_k9DmoVaAygRkliyp3DeYLOJXlVswXWScTqj0euHgt9U43_ewGtFOLPihiPdl7iNjrCit1ylZBQjStA5AlI8xjS8K6u6ZkmMoeiCnfy_mVL9SbzNOrlBxhmAD0qcJgpOsJyO8FpY0CbgwhB7aiAa9NrQZQitTAt" />
-  </picture>
-  </a>
-</div>
+<a href="https://www.star-history.com/?repos=WKQ9411%2FMini-LLM&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&theme=dark&legend=top-left&sealed_token=DUwyCN9jyiCzEYgcT7L7I426i8hGYxNhGhFjSPREo3f3weIKW3Ywf-clBrimu_esLzwvRqwtlyF3AIkpeq13ov-MVUxJnROhilfO3YyiHcDg6dRnGaMff0eSbEcbrkIdhzV9jJCokhtuGj3CVtQCI9rzpRBahVmGVzsL_NOhraFaIm2y3zekkrzDczyp" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=DUwyCN9jyiCzEYgcT7L7I426i8hGYxNhGhFjSPREo3f3weIKW3Ywf-clBrimu_esLzwvRqwtlyF3AIkpeq13ov-MVUxJnROhilfO3YyiHcDg6dRnGaMff0eSbEcbrkIdhzV9jJCokhtuGj3CVtQCI9rzpRBahVmGVzsL_NOhraFaIm2y3zekkrzDczyp" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=WKQ9411/Mini-LLM&type=date&legend=top-left&sealed_token=DUwyCN9jyiCzEYgcT7L7I426i8hGYxNhGhFjSPREo3f3weIKW3Ywf-clBrimu_esLzwvRqwtlyF3AIkpeq13ov-MVUxJnROhilfO3YyiHcDg6dRnGaMff0eSbEcbrkIdhzV9jJCokhtuGj3CVtQCI9rzpRBahVmGVzsL_NOhraFaIm2y3zekkrzDczyp" />
+ </picture>
+</a>
